@@ -10,24 +10,28 @@ import { CameraFollowSystem } from './systems/CameraFollowSystem.js';
 import { WeaponSystem } from './systems/WeaponSystem.js';
 import { ProjectileSystem } from './systems/ProjectileSystem.js';
 import { EnemyRenderSystem } from './systems/EnemyRenderSystem.js';
+import { ItemRenderSystem } from './systems/ItemRenderSystem.js';
 import { NetworkSyncSystem } from './systems/NetworkSyncSystem.js';
 import { RenderSyncSystem } from './systems/RenderSyncSystem.js';
+import { Scoreboard } from '@ui/Scoreboard.js';
 import { createPlayer } from './entities/PlayerFactory.js';
 import { MeshRef } from './components/MeshRef.js';
 import { WORLD_SIZE, TILE_SIZE } from '@shared/constants.js';
 
 export class Game {
-  constructor(engine, networkClient, stateBuffer, localPlayerId, spawnX = 0, spawnY = 0) {
+  constructor(engine, networkClient, stateBuffer, localPlayerId, spawnX = 0, spawnY = 0, onGameOver = null) {
     this.engine = engine;
     this.networkClient = networkClient;
     this.stateBuffer = stateBuffer;
     this.localPlayerId = localPlayerId;
     this.spawnX = spawnX;
     this.spawnY = spawnY;
+    this.onGameOver = onGameOver;
     this._joysticks = [];
     this._buttons = [];
     this._sceneObjects = [];
     this.hud = null;
+    this._scoreboard = null;
     this._setup();
   }
 
@@ -54,6 +58,9 @@ export class Game {
     const overlay = document.getElementById('ui-overlay');
     this.hud = new HUD(overlay);
     this._networkSync.hud = this.hud;
+
+    this._scoreboard = new Scoreboard();
+    this._networkSync.scoreboard = this._scoreboard;
   }
 
   _registerSystems() {
@@ -70,6 +77,13 @@ export class Game {
     this._enemyRenderSystem = new EnemyRenderSystem(renderer);
     this._networkSync.enemyRenderSystem = this._enemyRenderSystem;
 
+    this._itemRenderSystem = new ItemRenderSystem(renderer);
+    this._networkSync.itemRenderSystem = this._itemRenderSystem;
+
+    this._networkSync.onGameOver = (data) => {
+      if (this.onGameOver) this.onGameOver(data);
+    };
+
     this._weaponSystem = new WeaponSystem(input, this.networkClient);
 
     world.addSystem(new InputSystem(input));
@@ -80,6 +94,7 @@ export class Game {
     world.addSystem(this._networkSync);
     world.addSystem(this._projectileSystem);
     world.addSystem(this._enemyRenderSystem);
+    world.addSystem(this._itemRenderSystem);
     world.addSystem(new RenderSyncSystem());
   }
 
@@ -138,6 +153,7 @@ export class Game {
     for (const btn of this._buttons) btn.destroy();
     this._buttons = [];
     if (this.hud) { this.hud.destroy(); this.hud = null; }
+    if (this._scoreboard) { this._scoreboard.destroy(); this._scoreboard = null; }
 
     // Clean up projectile meshes
     for (const [, mesh] of this._projectileSystem.meshes) {
@@ -147,6 +163,11 @@ export class Game {
     // Clean up zombie meshes
     for (const [, entry] of this._enemyRenderSystem.meshes) {
       this.engine.renderer.remove(entry.group);
+    }
+
+    // Clean up item meshes
+    for (const [, mesh] of this._itemRenderSystem.meshes) {
+      this.engine.renderer.remove(mesh);
     }
 
     for (const obj of this._sceneObjects) {

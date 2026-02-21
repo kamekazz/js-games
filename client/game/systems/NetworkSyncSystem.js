@@ -18,9 +18,12 @@ export class NetworkSyncSystem extends System {
     this.renderer = renderer;
     this.inputManager = inputManager;
     this.localPlayerId = null;
-    this.projectileSystem = null; // set by Game.js
+    this.projectileSystem = null;  // set by Game.js
     this.enemyRenderSystem = null; // set by Game.js
-    this.hud = null;              // set by Game.js
+    this.itemRenderSystem = null;  // set by Game.js
+    this.scoreboard = null;        // set by Game.js
+    this.hud = null;               // set by Game.js
+    this.onGameOver = null;        // callback set by Game.js
     this._sendInterval = 1000 / 20;
     this._lastSendTime = 0;
     this._serverTimeOffset = 0;
@@ -49,6 +52,8 @@ export class NetworkSyncSystem extends System {
     this._processEvents();
     this._updateProjectiles();
     this._updateZombies();
+    this._updateItems();
+    this._updateScoreboard();
     this._updateLocalFromServer();
   }
 
@@ -185,12 +190,21 @@ export class NetworkSyncSystem extends System {
         this.hud.showWave(evt.wave);
       } else if (evt.type === 'zombie_kill' && evt.by === this.localPlayerId) {
         this.hud.addKill();
+      } else if (evt.type === 'item_pickup' && evt.pid === this.localPlayerId) {
+        this.hud.showPickup(evt.item);
+      } else if (evt.type === 'game_over') {
+        if (this.onGameOver) this.onGameOver(evt);
       }
     }
 
-    // Update wave info from state
+    // Update wave info and score from state
     if (this._latestState) {
       this.hud.updateWave(this._latestState.wave || 0, this._latestState.waveActive || false);
+      // Find local player score
+      const local = this._latestState.players.find(p => p.id === this.localPlayerId);
+      if (local) {
+        this.hud.updateScore(local.score || 0);
+      }
     }
 
     this._latestEvents = [];
@@ -211,6 +225,18 @@ export class NetworkSyncSystem extends System {
   _updateZombies() {
     if (this.enemyRenderSystem && this._latestState && this._latestState.zombies) {
       this.enemyRenderSystem.setZombies(this._latestState.zombies);
+    }
+  }
+
+  _updateItems() {
+    if (this.itemRenderSystem && this._latestState && this._latestState.items) {
+      this.itemRenderSystem.setItems(this._latestState.items);
+    }
+  }
+
+  _updateScoreboard() {
+    if (this.scoreboard && this._latestState && this._latestState.players) {
+      this.scoreboard.update(this._latestState.players);
     }
   }
 

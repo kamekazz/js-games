@@ -5,6 +5,7 @@ import { SceneManager } from './scenes/SceneManager.js';
 import { MainMenu } from './scenes/MainMenu.js';
 import { LobbyScene } from './scenes/LobbyScene.js';
 import { Game } from '@game/Game.js';
+import { ResultsScreen } from '@ui/ResultsScreen.js';
 
 const container = document.getElementById('game-container');
 const overlay = document.getElementById('ui-overlay');
@@ -16,6 +17,7 @@ const sceneManager = new SceneManager(overlay);
 
 let currentGame = null;
 let lobbyScene = null;
+let resultsScreen = null;
 
 function getWsUrl(roomCode) {
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -66,8 +68,15 @@ function joinRoom(roomCode, playerName) {
     if (lobbyScene) lobbyScene.exit();
     lobbyScene = null;
 
-    // Start the game
-    currentGame = new Game(engine, network, stateBuffer, data.player_id, data.x, data.y);
+    // Start the game with game-over callback
+    currentGame = new Game(engine, network, stateBuffer, data.player_id, data.x, data.y, (gameOverData) => {
+      // Show results screen
+      resultsScreen = new ResultsScreen(overlay, gameOverData, () => {
+        resultsScreen.destroy();
+        resultsScreen = null;
+        showMenu();
+      });
+    });
     engine.start();
   });
 
@@ -86,6 +95,10 @@ function showMenu() {
   if (currentGame) {
     currentGame.destroy();
     currentGame = null;
+  }
+  if (resultsScreen) {
+    resultsScreen.destroy();
+    resultsScreen = null;
   }
   const menu = new MainMenu(
     sceneManager,

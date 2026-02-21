@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(node --version:*)",
+      "Bash(npm:*)",
+      "Bash(winget install:*)",
+      "Bash(export PATH=\"/c/Users/manuel/nodejs/node-v22.14.0-win-x64:$PATH\")",
+      "Bash(export PATH:*)",
+      "Bash(python -m venv:*)",
+      "Bash(source:*)",
+      "Bash(pip install:*)",
+      "Bash(export PATH=\"/c/Users/manuel/Desktop/js-games/server/.venv/Scripts:/c/Users/manuel/AppData/Local/Programs/Python/Python312:/c/Users/manuel/AppData/Local/Programs/Python/Python312/Scripts:$PATH\")",
+      "Bash(export PATH=\"/c/Users/manuel/Desktop/js-games/server/.venv/Scripts:/c/Users/manuel/AppData/Local/Programs/Python/Python312:$PATH\")",
+      "Bash(python manage.py migrate:*)",
+      "Bash(python manage.py makemigrations:*)",
+      "Bash(kill:*)",
+      "Bash(python manage.py runserver:*)",
+      "Bash(export PATH=\"/c/Users/manuel/nodejs/node-v22.14.0-win-x64:/usr/bin:$PATH\")",
+      "Bash(node:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git config:*)",
+      "Bash(daphne:*)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(ipconfig:*)",
+      "Bash(tasklist:*)",
+      "Bash(ls -la \"C:\\\\Users\\\\manuel\\\\Desktop\\\\js-games\\\\server\\\\apps\\\\game\"\" 2>/dev/null || echo \"Directory does not exist \")"
+    ]
+  }
+}
