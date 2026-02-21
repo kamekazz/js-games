@@ -1,34 +1,45 @@
 import { isTouchDevice } from '@engine/input/DeviceDetector.js';
 import { TileRenderer } from '@engine/rendering/TileRenderer.js';
 import { VirtualJoystick } from '@ui/VirtualJoystick.js';
+import { ActionButton } from '@ui/ActionButton.js';
+import { HUD } from '@ui/HUD.js';
 import { InputSystem } from './systems/InputSystem.js';
 import { AimSystem } from './systems/AimSystem.js';
 import { MovementSystem } from './systems/MovementSystem.js';
 import { CameraFollowSystem } from './systems/CameraFollowSystem.js';
-import { RenderSyncSystem } from './systems/RenderSyncSystem.js';
+import { WeaponSystem } from './systems/WeaponSystem.js';
+import { ProjectileSystem } from './systems/ProjectileSystem.js';
 import { NetworkSyncSystem } from './systems/NetworkSyncSystem.js';
+import { RenderSyncSystem } from './systems/RenderSyncSystem.js';
 import { createPlayer } from './entities/PlayerFactory.js';
 import { MeshRef } from './components/MeshRef.js';
 import { WORLD_SIZE, TILE_SIZE } from '@shared/constants.js';
 
 export class Game {
-  constructor(engine, networkClient, stateBuffer, localPlayerId) {
+  constructor(engine, networkClient, stateBuffer, localPlayerId, spawnX = 0, spawnY = 0) {
     this.engine = engine;
     this.networkClient = networkClient;
     this.stateBuffer = stateBuffer;
     this.localPlayerId = localPlayerId;
+    this.spawnX = spawnX;
+    this.spawnY = spawnY;
     this._joysticks = [];
+    this._buttons = [];
     this._sceneObjects = [];
+    this.hud = null;
     this._setup();
   }
 
   _setup() {
     this._createGround();
+    this._createCrosshair();
     this._registerSystems();
     this._spawnPlayer();
+    this._createHUD();
 
     if (isTouchDevice()) {
       this._setupJoysticks();
+      this._setupActionButtons();
     }
   }
 
@@ -39,6 +50,26 @@ export class Game {
     this._sceneObjects.push(obj);
   }
 
+  _createCrosshair() {
+    this._crosshair = document.createElement('div');
+    this._crosshair.id = 'crosshair';
+    document.body.appendChild(this._crosshair);
+
+    // Load crosshair CSS
+    if (!document.querySelector('link[href*="hud.css"]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/styles/hud.css';
+      document.head.appendChild(link);
+    }
+  }
+
+  _createHUD() {
+    const overlay = document.getElementById('ui-overlay');
+    this.hud = new HUD(overlay);
+    this._networkSync.hud = this.hud;
+  }
+
   _registerSystems() {
     const { world, input, cameraController, renderer } = this.engine;
 
@@ -47,16 +78,23 @@ export class Game {
     );
     this._networkSync.localPlayerId = this.localPlayerId;
 
+    this._projectileSystem = new ProjectileSystem(renderer);
+    this._networkSync.projectileSystem = this._projectileSystem;
+
+    this._weaponSystem = new WeaponSystem(input, this.networkClient);
+
     world.addSystem(new InputSystem(input));
     world.addSystem(new AimSystem(input));
     world.addSystem(new MovementSystem());
+    world.addSystem(this._weaponSystem);
     world.addSystem(new CameraFollowSystem(cameraController));
     world.addSystem(this._networkSync);
+    world.addSystem(this._projectileSystem);
     world.addSystem(new RenderSyncSystem());
   }
 
   _spawnPlayer() {
-    const player = createPlayer(0, 0, true);
+    const player = createPlayer(this.spawnX, this.spawnY, true);
     this.engine.world.addEntity(player);
     const mesh = player.get(MeshRef).mesh;
     this.engine.renderer.add(mesh);
@@ -82,18 +120,46 @@ export class Game {
     }
   }
 
+  _setupActionButtons() {
+    const container = document.getElementById('action-buttons');
+    if (!container) return;
+
+    const fireBtn = new ActionButton(container, {
+      label: 'FIRE',
+      size: 70,
+      color: 'rgba(255,68,68,0.5)',
+      onPress: () => this._weaponSystem.setShooting(true),
+      onRelease: () => this._weaponSystem.setShooting(false),
+    });
+    this._buttons.push(fireBtn);
+
+    const reloadBtn = new ActionButton(container, {
+      label: 'R',
+      size: 50,
+      color: 'rgba(68,136,255,0.5)',
+      onPress: () => this._weaponSystem.requestReload(),
+    });
+    this._buttons.push(reloadBtn);
+  }
+
   destroy() {
-    // Remove joysticks
     for (const js of this._joysticks) js.destroy();
     this._joysticks = [];
+    for (const btn of this._buttons) btn.destroy();
+    this._buttons = [];
+    if (this.hud) { this.hud.destroy(); this.hud = null; }
+    if (this._crosshair) { this._crosshair.remove(); this._crosshair = null; }
 
-    // Remove scene objects
+    // Clean up projectile meshes
+    for (const [, mesh] of this._projectileSystem.meshes) {
+      this.engine.renderer.remove(mesh);
+    }
+
     for (const obj of this._sceneObjects) {
       this.engine.renderer.remove(obj);
     }
     this._sceneObjects = [];
 
-    // Clear ECS
     this.engine.world.entities.clear();
     this.engine.world.systems.length = 0;
   }

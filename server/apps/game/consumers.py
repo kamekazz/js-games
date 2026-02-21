@@ -44,6 +44,10 @@ class GameConsumer(AsyncWebsocketConsumer):
             await self._handle_join(data)
         elif msg_type == 'player_move':
             await self._handle_move(data)
+        elif msg_type == 'player_shoot':
+            self._handle_shoot()
+        elif msg_type == 'player_reload':
+            self._handle_reload()
 
     async def _handle_join(self, data):
         display_name = data.get('name', 'Player')
@@ -84,6 +88,16 @@ class GameConsumer(AsyncWebsocketConsumer):
                 float(data.get('my', 0)),
                 float(data.get('angle', 0)),
             )
+
+    def _handle_shoot(self):
+        room = game_manager.rooms.get(self.room_code)
+        if room and self.player_id:
+            room.process_shoot(self.player_id)
+
+    def _handle_reload(self):
+        room = game_manager.rooms.get(self.room_code)
+        if room and self.player_id:
+            room.process_reload(self.player_id)
 
     async def _tick_loop(self):
         """Server-authoritative game loop running at TICK_RATE Hz."""

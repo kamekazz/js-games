@@ -6,6 +6,7 @@ export class InputManager {
       moveY: 0,
       aimX: 0,
       aimY: 0,
+      aimJoystickActive: false, // true only when right joystick is held
       actions: {},
     };
 
@@ -79,7 +80,10 @@ export class InputManager {
     }
 
     // Aim: joystick > mouse
-    if (this._joystickAim.x !== 0 || this._joystickAim.y !== 0) {
+    const joystickAimActive = this._joystickAim.x !== 0 || this._joystickAim.y !== 0;
+    this.state.aimJoystickActive = joystickAimActive;
+
+    if (joystickAimActive) {
       this.state.aimX = this._joystickAim.x;
       this.state.aimY = this._joystickAim.y;
     } else if (this._mouseActive) {

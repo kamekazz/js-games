@@ -67,7 +67,7 @@ function joinRoom(roomCode, playerName) {
     lobbyScene = null;
 
     // Start the game
-    currentGame = new Game(engine, network, stateBuffer, data.player_id);
+    currentGame = new Game(engine, network, stateBuffer, data.player_id, data.x, data.y);
     engine.start();
   });
 

@@ -5,6 +5,8 @@ import { Velocity } from '../components/Velocity.js';
 import { MeshRef } from '../components/MeshRef.js';
 import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Rotation } from '../components/Rotation.js';
+import { Health } from '../components/Health.js';
+import { Weapon } from '../components/Weapon.js';
 import { PLAYER_SPEED } from '@shared/constants.js';
 
 export function createPlayer(x = 0, y = 0, isLocal = true) {
@@ -36,6 +38,8 @@ export function createPlayer(x = 0, y = 0, isLocal = true) {
   entity.add(new Rotation(0));
   entity.add(new MeshRef(group));
   entity.add(new PlayerControlled(isLocal));
+  entity.add(new Health(100, 100));
+  entity.add(new Weapon());
 
   return entity;
 }

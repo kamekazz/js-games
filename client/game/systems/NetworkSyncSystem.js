@@ -7,36 +7,47 @@ import { MeshRef } from '../components/MeshRef.js';
 import { NetworkId } from '../components/NetworkId.js';
 import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Velocity } from '../components/Velocity.js';
+import { Health } from '../components/Health.js';
+import { Weapon } from '../components/Weapon.js';
 
 export class NetworkSyncSystem extends System {
   constructor(networkClient, stateBuffer, renderer, inputManager) {
-    super(95); // after camera, before render sync
+    super(95);
     this.networkClient = networkClient;
     this.stateBuffer = stateBuffer;
     this.renderer = renderer;
     this.inputManager = inputManager;
     this.localPlayerId = null;
-    this._sendInterval = 1000 / 20; // 20Hz
+    this.projectileSystem = null; // set by Game.js
+    this.hud = null;              // set by Game.js
+    this._sendInterval = 1000 / 20;
     this._lastSendTime = 0;
     this._serverTimeOffset = 0;
-    this._remoteEntities = new Map(); // networkId -> entityId
+    this._remoteEntities = new Map();
+    this._latestState = null;
+    this._latestEvents = [];
   }
 
   init(world) {
     super.init(world);
 
     this.networkClient.on('game_state', (data) => {
-      const serverTime = data.t * 1000; // convert to ms
+      const serverTime = data.t * 1000;
       if (this._serverTimeOffset === 0) {
         this._serverTimeOffset = serverTime - performance.now();
       }
       this.stateBuffer.push(serverTime, data.state);
+      this._latestState = data.state;
+      this._latestEvents = data.state.events || [];
     });
   }
 
   update(dt) {
     this._sendInput();
     this._applyServerState();
+    this._processEvents();
+    this._updateProjectiles();
+    this._updateLocalFromServer();
   }
 
   _sendInput() {
@@ -47,8 +58,6 @@ export class NetworkSyncSystem extends System {
     if (!this.networkClient.connected || !this.localPlayerId) return;
 
     const input = this.inputManager.getState();
-
-    // Find local player's rotation
     let angle = 0;
     const locals = this.world.query(PlayerControlled, Rotation);
     for (const e of locals) {
@@ -75,8 +84,6 @@ export class NetworkSyncSystem extends System {
 
     for (const playerData of state.players) {
       seen.add(playerData.id);
-
-      // Skip local player — they use client-side prediction
       if (playerData.id === this.localPlayerId) continue;
 
       const entityId = this._remoteEntities.get(playerData.id);
@@ -87,16 +94,18 @@ export class NetworkSyncSystem extends System {
         this._remoteEntities.set(playerData.id, entity.id);
       }
 
-      // Update position/rotation from server
       const pos = entity.get(Position);
       pos.x = playerData.x;
       pos.y = playerData.y;
 
       const rot = entity.get(Rotation);
       rot.angle = playerData.angle;
+
+      // Toggle visibility based on alive status
+      const mesh = entity.get(MeshRef).mesh;
+      mesh.visible = playerData.alive !== false;
     }
 
-    // Remove players that left
     for (const [netId, entityId] of this._remoteEntities) {
       if (!seen.has(netId)) {
         const entity = this.world.getEntity(entityId);
@@ -110,10 +119,87 @@ export class NetworkSyncSystem extends System {
     }
   }
 
+  _updateLocalFromServer() {
+    if (!this._latestState) return;
+
+    // Sync health/ammo from server for local player
+    for (const pd of this._latestState.players) {
+      if (pd.id !== this.localPlayerId) continue;
+
+      const locals = this.world.query(PlayerControlled, Health, Weapon);
+      for (const e of locals) {
+        if (!e.get(PlayerControlled).isLocal) continue;
+
+        // Reconcile position with server (smooth correction)
+        const pos = e.get(Position);
+        const dx = pd.x - pos.x;
+        const dy = pd.y - pos.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 5) {
+          // Teleport if too far off
+          pos.x = pd.x;
+          pos.y = pd.y;
+        } else if (dist > 0.1) {
+          // Smooth correction
+          pos.x += dx * 0.3;
+          pos.y += dy * 0.3;
+        }
+
+        const health = e.get(Health);
+        health.current = pd.hp;
+        health.alive = pd.alive;
+
+        const weapon = e.get(Weapon);
+        weapon.ammo = pd.ammo;
+        weapon.maxAmmo = pd.maxAmmo;
+        weapon.reloading = pd.reloading;
+
+        // Toggle mesh visibility
+        const mesh = e.get(MeshRef).mesh;
+        mesh.visible = pd.alive;
+
+        // Update HUD
+        if (this.hud) {
+          this.hud.updateHealth(pd.hp, 100);
+          this.hud.updateAmmo(pd.ammo, pd.maxAmmo, pd.reloading);
+        }
+      }
+      break;
+    }
+  }
+
+  _processEvents() {
+    if (!this.hud) return;
+    for (const evt of this._latestEvents) {
+      if (evt.type === 'kill') {
+        // Find names
+        const killer = this._findPlayerName(evt.by);
+        const victim = this._findPlayerName(evt.pid);
+        if (evt.pid === this.localPlayerId) {
+          this.hud.showDeath();
+        } else {
+          this.hud.showKill(killer, victim);
+        }
+      }
+    }
+    this._latestEvents = [];
+  }
+
+  _findPlayerName(pid) {
+    if (!this._latestState) return 'Player';
+    const p = this._latestState.players.find(p => p.id === pid);
+    return p ? p.name : 'Player';
+  }
+
+  _updateProjectiles() {
+    if (this.projectileSystem && this._latestState && this._latestState.projectiles) {
+      this.projectileSystem.setProjectiles(this._latestState.projectiles);
+    }
+  }
+
   _createRemotePlayer(playerData) {
     const group = new THREE.Group();
 
-    // Body — red for remote players
     const body = new THREE.Mesh(
       new THREE.BoxGeometry(1.2, 1.2, 1.2),
       new THREE.MeshStandardMaterial({ color: 0xff4444 })
@@ -121,7 +207,6 @@ export class NetworkSyncSystem extends System {
     body.position.y = 0.6;
     group.add(body);
 
-    // Direction indicator
     const nose = new THREE.Mesh(
       new THREE.BoxGeometry(0.3, 0.3, 0.8),
       new THREE.MeshStandardMaterial({ color: 0xff8888 })
@@ -129,7 +214,6 @@ export class NetworkSyncSystem extends System {
     nose.position.set(0, 0.6, -0.8);
     group.add(nose);
 
-    // Name label — simple sprite
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 64;
