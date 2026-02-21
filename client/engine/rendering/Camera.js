@@ -1,6 +1,9 @@
 export class CameraController {
   constructor(camera) {
     this.camera = camera;
+    // Store the initial offset from the look-at point
+    this.offsetY = camera.position.y;  // height above ground
+    this.offsetZ = 8; // slight tilt to see character sides
     this.targetX = 0;
     this.targetZ = 0;
     this.lerpSpeed = 5;
@@ -13,7 +16,17 @@ export class CameraController {
 
   update(dt) {
     const t = 1 - Math.exp(-this.lerpSpeed * dt);
-    this.camera.position.x += (this.targetX - this.camera.position.x) * t;
-    this.camera.position.z += (this.targetZ - this.camera.position.z) * t;
+    const targetCamX = this.targetX;
+    const targetCamZ = this.targetZ + this.offsetZ;
+
+    this.camera.position.x += (targetCamX - this.camera.position.x) * t;
+    this.camera.position.z += (targetCamZ - this.camera.position.z) * t;
+
+    // Always look at the player position (not the camera offset position)
+    this.camera.lookAt(
+      this.camera.position.x,
+      0,
+      this.camera.position.z - this.offsetZ
+    );
   }
 }

@@ -24,7 +24,8 @@ export class Renderer {
       0.1,
       200
     );
-    this.camera.position.set(0, 50, 0);
+    // Slightly tilted top-down (not pure overhead) so you see the side of characters
+    this.camera.position.set(0, 50, 8);
     this.camera.lookAt(0, 0, 0);
 
     // Lighting
