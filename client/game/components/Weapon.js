@@ -1,12 +1,25 @@
 import { Component } from '@engine/ecs/Component.js';
+import { WEAPONS } from '@shared/constants.js';
 
 export class Weapon extends Component {
-  constructor() {
+  constructor(weaponId = 'pistol') {
     super();
-    this.id = 'pistol';
-    this.ammo = 12;
-    this.maxAmmo = 12;
-    this.fireRate = 0.3;
+    const w = WEAPONS[weaponId];
+    this.id = weaponId;
+    this.ammo = w.magazine;
+    this.maxAmmo = w.magazine;
+    this.fireRate = w.fireRate;
+    this.cooldown = 0;
+    this.reloading = false;
+  }
+
+  switchTo(weaponId) {
+    const w = WEAPONS[weaponId];
+    if (!w) return;
+    this.id = weaponId;
+    this.ammo = w.magazine;
+    this.maxAmmo = w.magazine;
+    this.fireRate = w.fireRate;
     this.cooldown = 0;
     this.reloading = false;
   }

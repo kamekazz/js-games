@@ -27,14 +27,17 @@ export class HUD {
         <div id="hud-kill-feed" style="font-size: 12px; color: #ff8888; min-height: 18px;"></div>
       </div>
       <div id="hud-right" style="text-align: right; margin-top: 44px;">
+        <div id="hud-weapon-name" style="font-size: 13px; color: #ffcc44; font-weight: bold; margin-bottom: 2px;">Pistol</div>
         <div id="hud-ammo" style="font-size: 20px; font-weight: bold;">12 / 12</div>
         <div id="hud-reload-hint" style="font-size: 11px; color: #888; display: none;">[R] Reload</div>
+        <div id="hud-weapon-hints" style="font-size: 10px; color: #666; margin-top: 4px;">[1] Pistol  [2] Rifle  [3] Uzi  [4] Shotgun</div>
       </div>
     `;
     container.appendChild(this.el);
 
     this._hpBar = this.el.querySelector('#hud-hp-bar');
     this._staminaBar = this.el.querySelector('#hud-stamina-bar');
+    this._weaponName = this.el.querySelector('#hud-weapon-name');
     this._ammo = this.el.querySelector('#hud-ammo');
     this._reloadHint = this.el.querySelector('#hud-reload-hint');
     this._killFeed = this.el.querySelector('#hud-kill-feed');
@@ -80,6 +83,11 @@ export class HUD {
       this._ammo.textContent = `${current} / ${max}`;
       this._reloadHint.style.display = current < max ? 'block' : 'none';
     }
+  }
+
+  updateWeapon(weaponId) {
+    const names = { pistol: 'Pistol', rifle: 'Rifle', uzi: 'Uzi', shotgun: 'Shotgun' };
+    this._weaponName.textContent = names[weaponId] || weaponId;
   }
 
   showKill(killerName, victimName) {

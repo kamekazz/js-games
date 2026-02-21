@@ -48,6 +48,8 @@ class GameConsumer(AsyncWebsocketConsumer):
             self._handle_shoot(data)
         elif msg_type == 'player_reload':
             self._handle_reload()
+        elif msg_type == 'player_switch_weapon':
+            self._handle_switch_weapon(data)
 
     async def _handle_join(self, data):
         display_name = data.get('name', 'Player')
@@ -105,6 +107,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         room = game_manager.rooms.get(self.room_code)
         if room and self.player_id:
             room.process_reload(self.player_id)
+
+    def _handle_switch_weapon(self, data):
+        room = game_manager.rooms.get(self.room_code)
+        if room and self.player_id:
+            room.process_switch_weapon(self.player_id, data.get('weapon'))
 
     async def _tick_loop(self):
         """Server-authoritative game loop running at TICK_RATE Hz."""

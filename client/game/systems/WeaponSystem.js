@@ -4,6 +4,13 @@ import { Weapon } from '../components/Weapon.js';
 import { Health } from '../components/Health.js';
 import { Rotation } from '../components/Rotation.js';
 
+const HOTKEY_MAP = {
+  Digit1: 'pistol',
+  Digit2: 'rifle',
+  Digit3: 'uzi',
+  Digit4: 'shotgun',
+};
+
 export class WeaponSystem extends System {
   constructor(inputManager, networkClient, audioManager) {
     super(15); // after movement
@@ -11,10 +18,11 @@ export class WeaponSystem extends System {
     this.networkClient = networkClient;
     this.audioManager = audioManager;
     this._reloadRequested = false;
+    this._switchRequested = null;
 
-    // R key to reload
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyR') this._reloadRequested = true;
+      if (HOTKEY_MAP[e.code]) this._switchRequested = HOTKEY_MAP[e.code];
     });
   }
 
@@ -37,6 +45,12 @@ export class WeaponSystem extends System {
       const weapon = entity.get(Weapon);
       const health = entity.get(Health);
       if (!health.alive) continue;
+
+      // Weapon switch
+      if (this._switchRequested && !weapon.reloading && this._switchRequested !== weapon.id) {
+        weapon.switchTo(this._switchRequested);
+        this.networkClient.send({ type: 'player_switch_weapon', weapon: this._switchRequested });
+      }
 
       // Cooldown
       if (weapon.cooldown > 0) weapon.cooldown -= dt;
@@ -66,5 +80,6 @@ export class WeaponSystem extends System {
     }
 
     this._reloadRequested = false;
+    this._switchRequested = null;
   }
 }

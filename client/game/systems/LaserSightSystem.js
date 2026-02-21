@@ -3,12 +3,8 @@ import { System } from '@engine/ecs/System.js';
 import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Position } from '../components/Position.js';
 import { Rotation } from '../components/Rotation.js';
-
-const LASER_LENGTH = 5;
-const LASER_COLOR = 0xff3333;
-const MAX_SPREAD = 2;       // cone width at far end when first aiming
-const MIN_SPREAD = 0.04;    // thin line when fully focused
-const FOCUS_DURATION = 0.8; // seconds to narrow from cone to laser
+import { Weapon } from '../components/Weapon.js';
+import { WEAPONS } from '@shared/constants.js';
 
 export class LaserSightSystem extends System {
   constructor(renderer, inputManager) {
@@ -19,11 +15,12 @@ export class LaserSightSystem extends System {
     this._geometry = null;
     this._material = null;
     this._aimTime = 0;
+    this._currentColor = null;
   }
 
   update(dt) {
     const input = this.inputManager.getState();
-    const entities = this.world.query(PlayerControlled, Position, Rotation);
+    const entities = this.world.query(PlayerControlled, Position, Rotation, Weapon);
 
     let localEntity = null;
     for (const entity of entities) {
@@ -39,17 +36,25 @@ export class LaserSightSystem extends System {
     }
 
     if (input.shooting) {
+      const weapon = localEntity.get(Weapon);
+      const wDef = WEAPONS[weapon.id];
+      const laserLength = wDef.laserLength;
+      const laserColor = wDef.laserColor;
+      const maxSpread = wDef.coneMaxSpread;
+      const minSpread = wDef.coneMinSpread;
+      const focusDuration = wDef.focusDuration;
+
       this._aimTime += dt;
-      const progress = Math.min(this._aimTime / FOCUS_DURATION, 1);
-      const spread = MIN_SPREAD + (MAX_SPREAD - MIN_SPREAD) * (1 - progress);
+      const progress = Math.min(this._aimTime / focusDuration, 1);
+      const spread = minSpread + (maxSpread - minSpread) * (1 - progress);
 
       const pos = localEntity.get(Position);
       const angle = localEntity.get(Rotation).angle;
 
       const startX = pos.x;
       const startY = pos.y;
-      const endX = startX + Math.cos(angle) * LASER_LENGTH;
-      const endY = startY + Math.sin(angle) * LASER_LENGTH;
+      const endX = startX + Math.cos(angle) * laserLength;
+      const endY = startY + Math.sin(angle) * laserLength;
 
       // Perpendicular direction for cone width
       const perpX = -Math.sin(angle);
@@ -58,17 +63,24 @@ export class LaserSightSystem extends System {
       if (!this._mesh) {
         this._geometry = new THREE.BufferGeometry();
         this._material = new THREE.MeshBasicMaterial({
-          color: LASER_COLOR,
+          color: laserColor,
           transparent: true,
           opacity: 0.3,
           side: THREE.DoubleSide,
           depthWrite: false,
         });
+        this._currentColor = laserColor;
         const positions = new Float32Array(9); // 3 vertices * 3 components
         this._geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
         this._mesh = new THREE.Mesh(this._geometry, this._material);
         this._mesh.renderOrder = 999;
         this.renderer.add(this._mesh);
+      }
+
+      // Update color if weapon changed
+      if (this._currentColor !== laserColor) {
+        this._material.color.setHex(laserColor);
+        this._currentColor = laserColor;
       }
 
       // More opaque as it narrows into the laser
@@ -104,6 +116,7 @@ export class LaserSightSystem extends System {
       this._mesh = null;
       this._geometry = null;
       this._material = null;
+      this._currentColor = null;
     }
   }
 

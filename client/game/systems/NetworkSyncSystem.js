@@ -164,6 +164,11 @@ export class NetworkSyncSystem extends System {
         health.alive = pd.alive;
 
         const weapon = e.get(Weapon);
+        // Server-authoritative weapon sync
+        if (pd.weapon && pd.weapon !== weapon.id) {
+          weapon.switchTo(pd.weapon);
+          if (this.hud) this.hud.updateWeapon(pd.weapon);
+        }
         weapon.ammo = pd.ammo;
         weapon.maxAmmo = pd.maxAmmo;
         weapon.reloading = pd.reloading;
@@ -176,6 +181,7 @@ export class NetworkSyncSystem extends System {
         if (this.hud) {
           this.hud.updateHealth(pd.hp, 100);
           this.hud.updateAmmo(pd.ammo, pd.maxAmmo, pd.reloading);
+          this.hud.updateWeapon(weapon.id);
           const sprint = e.get(Sprint);
           if (sprint) this.hud.updateStamina(sprint.stamina, sprint.maxStamina);
         }

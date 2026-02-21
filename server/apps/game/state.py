@@ -14,8 +14,8 @@ PLAYER_SPEED = 12
 PLAYER_SPRINT_MULTIPLIER = 1.7
 # Anti-cheat: max allowed speed (sprint + small tolerance)
 MAX_SPEED = PLAYER_SPEED * PLAYER_SPRINT_MULTIPLIER * 1.1
-# Minimum fire cooldown to accept (anti-rapid-fire)
-MIN_FIRE_INTERVAL = 0.15
+# Minimum fire cooldown multiplier for anti-cheat (fraction of weapon fire_rate)
+FIRE_INTERVAL_TOLERANCE = 0.8
 WORLD_SIZE = 100
 TICK_RATE = 20
 TICK_INTERVAL = 1.0 / TICK_RATE
@@ -24,13 +24,59 @@ TICK_INTERVAL = 1.0 / TICK_RATE
 WEAPONS = {
     'pistol': {
         'damage': 20,
-        'fire_rate': 0.3,   # seconds between shots
+        'fire_rate': 0.3,
         'magazine': 12,
         'reload_time': 1.5,
         'projectile_speed': 40,
         'range': 30,
+        'pellets': 1,
+        'spread_angle': 0,
+        'falloff': True,
+        'falloff_start': 15,
+        'falloff_min': 0.5,
+    },
+    'rifle': {
+        'damage': 35,
+        'fire_rate': 0.8,
+        'magazine': 8,
+        'reload_time': 2.5,
+        'projectile_speed': 60,
+        'range': 80,
+        'pellets': 1,
+        'spread_angle': 0,
+        'falloff': False,
+        'falloff_start': 0,
+        'falloff_min': 1.0,
+    },
+    'uzi': {
+        'damage': 10,
+        'fire_rate': 0.1,
+        'magazine': 30,
+        'reload_time': 1.8,
+        'projectile_speed': 35,
+        'range': 20,
+        'pellets': 1,
+        'spread_angle': 0,
+        'falloff': True,
+        'falloff_start': 10,
+        'falloff_min': 0.6,
+    },
+    'shotgun': {
+        'damage': 8,
+        'fire_rate': 1.0,
+        'magazine': 6,
+        'reload_time': 2.2,
+        'projectile_speed': 30,
+        'range': 12,
+        'pellets': 6,
+        'spread_angle': 0.35,
+        'falloff': True,
+        'falloff_start': 5,
+        'falloff_min': 0.3,
     },
 }
+
+VALID_WEAPON_IDS = set(WEAPONS.keys())
 
 PLAYER_MAX_HEALTH = 100
 RESPAWN_TIME = 3.0
@@ -71,11 +117,11 @@ class ItemDrop:
 
 
 class ProjectileState:
-    __slots__ = ('id', 'owner_id', 'x', 'y', 'dx', 'dy', 'speed', 'damage', 'max_range', 'traveled')
+    __slots__ = ('id', 'owner_id', 'x', 'y', 'dx', 'dy', 'speed', 'damage', 'max_range', 'traveled', 'weapon_id')
 
     _next_id = 0
 
-    def __init__(self, owner_id, x, y, angle, weapon):
+    def __init__(self, owner_id, x, y, angle, weapon, weapon_id='pistol'):
         ProjectileState._next_id += 1
         self.id = ProjectileState._next_id
         self.owner_id = owner_id
@@ -87,6 +133,7 @@ class ProjectileState:
         self.damage = weapon['damage']
         self.max_range = weapon['range']
         self.traveled = 0.0
+        self.weapon_id = weapon_id
 
 
 class PlayerState:
@@ -138,6 +185,7 @@ class PlayerState:
             'angle': round(self.angle, 3),
             'hp': self.health,
             'alive': self.alive,
+            'weapon': self.weapon_id,
             'ammo': self.ammo,
             'maxAmmo': self.mag_size,
             'reloading': self.reloading,
@@ -198,20 +246,34 @@ class GameRoom:
         if player.ammo <= 0:
             return
 
-        # Anti-cheat: enforce minimum fire interval
+        weapon = WEAPONS[player.weapon_id]
+
+        # Anti-cheat: enforce minimum fire interval per weapon
         now = time.time()
-        if now - player._last_shot_time < MIN_FIRE_INTERVAL:
-            logger.warning('Rapid fire from %s (%.3fs)', player_id, now - last_shot)
+        min_interval = weapon['fire_rate'] * FIRE_INTERVAL_TOLERANCE
+        if now - player._last_shot_time < min_interval:
+            logger.warning('Rapid fire from %s (%.3fs)', player_id, now - player._last_shot_time)
             return
         player._last_shot_time = now
 
-        weapon = WEAPONS[player.weapon_id]
         player.ammo -= 1
         player.fire_cooldown = weapon['fire_rate']
         player.shots_fired += 1
 
-        proj = ProjectileState(player_id, player.x, player.y, player.angle, weapon)
-        self.projectiles.append(proj)
+        pellets = weapon.get('pellets', 1)
+        spread = weapon.get('spread_angle', 0)
+
+        if pellets > 1 and spread > 0:
+            # Multi-pellet weapon (shotgun): spread pellets across the angle
+            half_spread = spread / 2
+            for i in range(pellets):
+                offset = -half_spread + spread * (i / (pellets - 1))
+                pellet_angle = player.angle + offset
+                proj = ProjectileState(player_id, player.x, player.y, pellet_angle, weapon, player.weapon_id)
+                self.projectiles.append(proj)
+        else:
+            proj = ProjectileState(player_id, player.x, player.y, player.angle, weapon, player.weapon_id)
+            self.projectiles.append(proj)
 
         self.events.append({
             'type': 'shoot',
@@ -231,6 +293,25 @@ class GameRoom:
         weapon = WEAPONS[player.weapon_id]
         player.reloading = True
         player.reload_timer = weapon['reload_time']
+
+    def process_switch_weapon(self, player_id, weapon_id):
+        if weapon_id not in VALID_WEAPON_IDS:
+            return
+        player = self.players.get(player_id)
+        if not player or not player.alive:
+            return
+        if player.reloading:
+            return
+        if player.weapon_id == weapon_id:
+            return
+
+        player.weapon_id = weapon_id
+        weapon = WEAPONS[weapon_id]
+        player.ammo = weapon['magazine']
+        player.mag_size = weapon['magazine']
+        player.fire_cooldown = 0.0
+        player.reload_timer = 0.0
+        player.reloading = False
 
     def tick(self, dt):
         self.events = []
@@ -397,7 +478,7 @@ class GameRoom:
                 dx = zombie.x - proj.x
                 dy = zombie.y - proj.y
                 if dx * dx + dy * dy < zombie.size * zombie.size + 0.5:
-                    zombie.health -= proj.damage
+                    zombie.health -= self._calc_damage(proj)
                     # Track accuracy
                     shooter = self.players.get(proj.owner_id)
                     if shooter:
@@ -438,7 +519,7 @@ class GameRoom:
                     dx = player.x - proj.x
                     dy = player.y - proj.y
                     if dx * dx + dy * dy < 1.0:
-                        player.health -= proj.damage
+                        player.health -= self._calc_damage(proj)
                         self.events.append({
                             'type': 'hit',
                             'pid': player.player_id,
@@ -500,6 +581,19 @@ class GameRoom:
                 surviving_items.append(item)
 
         self.items = surviving_items
+
+    def _calc_damage(self, proj):
+        weapon = WEAPONS.get(proj.weapon_id)
+        if not weapon or not weapon.get('falloff'):
+            return proj.damage
+        start = weapon['falloff_start']
+        if proj.traveled <= start:
+            return proj.damage
+        # Linear falloff from start to max_range
+        t = (proj.traveled - start) / max(proj.max_range - start, 0.01)
+        t = min(t, 1.0)
+        mult = 1.0 - t * (1.0 - weapon['falloff_min'])
+        return round(proj.damage * mult)
 
     def get_state(self):
         return {
