@@ -6,15 +6,19 @@ import { Rotation } from '../components/Rotation.js';
 
 const LASER_LENGTH = 5;
 const LASER_COLOR = 0xff3333;
+const MAX_SPREAD = 2;       // cone width at far end when first aiming
+const MIN_SPREAD = 0.04;    // thin line when fully focused
+const FOCUS_DURATION = 0.8; // seconds to narrow from cone to laser
 
 export class LaserSightSystem extends System {
   constructor(renderer, inputManager) {
     super(16); // right after WeaponSystem (15)
     this.renderer = renderer;
     this.inputManager = inputManager;
-    this._line = null;
+    this._mesh = null;
     this._geometry = null;
     this._material = null;
+    this._aimTime = 0;
   }
 
   update(dt) {
@@ -30,11 +34,15 @@ export class LaserSightSystem extends System {
     }
 
     if (!localEntity) {
-      this._removeLine();
+      this._removeMesh();
       return;
     }
 
     if (input.shooting) {
+      this._aimTime += dt;
+      const progress = Math.min(this._aimTime / FOCUS_DURATION, 1);
+      const spread = MIN_SPREAD + (MAX_SPREAD - MIN_SPREAD) * (1 - progress);
+
       const pos = localEntity.get(Position);
       const angle = localEntity.get(Rotation).angle;
 
@@ -43,46 +51,63 @@ export class LaserSightSystem extends System {
       const endX = startX + Math.cos(angle) * LASER_LENGTH;
       const endY = startY + Math.sin(angle) * LASER_LENGTH;
 
-      if (!this._line) {
+      // Perpendicular direction for cone width
+      const perpX = -Math.sin(angle);
+      const perpY = Math.cos(angle);
+
+      if (!this._mesh) {
         this._geometry = new THREE.BufferGeometry();
-        this._material = new THREE.LineBasicMaterial({
+        this._material = new THREE.MeshBasicMaterial({
           color: LASER_COLOR,
           transparent: true,
-          opacity: 0.7,
+          opacity: 0.3,
+          side: THREE.DoubleSide,
+          depthWrite: false,
         });
-        const positions = new Float32Array(6); // 2 points * 3 components
+        const positions = new Float32Array(9); // 3 vertices * 3 components
         this._geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        this._line = new THREE.Line(this._geometry, this._material);
-        this._line.renderOrder = 999;
-        this.renderer.add(this._line);
+        this._mesh = new THREE.Mesh(this._geometry, this._material);
+        this._mesh.renderOrder = 999;
+        this.renderer.add(this._mesh);
       }
 
+      // More opaque as it narrows into the laser
+      this._material.opacity = 0.25 + 0.45 * progress;
+
       const posAttr = this._geometry.attributes.position;
-      // Three.js uses Y-up; our game XY maps to Three.js XZ
+      const halfSpread = spread / 2;
+
+      // Vertex 0: player position (cone tip)
       posAttr.array[0] = startX;
-      posAttr.array[1] = 0.5;   // slightly above ground
+      posAttr.array[1] = 0.5;
       posAttr.array[2] = -startY;
-      posAttr.array[3] = endX;
+      // Vertex 1: end + perpendicular offset
+      posAttr.array[3] = endX + perpX * halfSpread;
       posAttr.array[4] = 0.5;
-      posAttr.array[5] = -endY;
+      posAttr.array[5] = -(endY + perpY * halfSpread);
+      // Vertex 2: end - perpendicular offset
+      posAttr.array[6] = endX - perpX * halfSpread;
+      posAttr.array[7] = 0.5;
+      posAttr.array[8] = -(endY - perpY * halfSpread);
       posAttr.needsUpdate = true;
     } else {
-      this._removeLine();
+      this._removeMesh();
+      this._aimTime = 0;
     }
   }
 
-  _removeLine() {
-    if (this._line) {
-      this.renderer.remove(this._line);
+  _removeMesh() {
+    if (this._mesh) {
+      this.renderer.remove(this._mesh);
       this._geometry.dispose();
       this._material.dispose();
-      this._line = null;
+      this._mesh = null;
       this._geometry = null;
       this._material = null;
     }
   }
 
   destroy() {
-    this._removeLine();
+    this._removeMesh();
   }
 }
