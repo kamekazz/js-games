@@ -32,6 +32,7 @@ export class Engine {
     const dt = Math.min((now - this._lastTime) / 1000, 0.1); // cap at 100ms
     this._lastTime = now;
 
+    this.input.tick();
     this.world.update(dt);
     this.renderer.render();
   }

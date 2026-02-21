@@ -26,7 +26,18 @@
       "Bash(python:*)",
       "Bash(ipconfig:*)",
       "Bash(tasklist:*)",
-      "Bash(ls -la \"C:\\\\Users\\\\manuel\\\\Desktop\\\\js-games\\\\server\\\\apps\\\\game\"\" 2>/dev/null || echo \"Directory does not exist \")"
+      "Bash(ls -la \"C:\\\\Users\\\\manuel\\\\Desktop\\\\js-games\\\\server\\\\apps\\\\game\"\" 2>/dev/null || echo \"Directory does not exist \")",
+      "Bash(.venv/Scripts/python manage.py makemigrations:*)",
+      "Bash(cd \"C:/Users/manuel/Desktop/js-games/server\" && .venv/Scripts/python.exe -c \"import django, channels, daphne, rest_framework, corsheaders; print\\('All deps OK'\\)\" 2>&1)",
+      "Bash(cd \"C:/Users/manuel/Desktop/js-games/server\" && .venv/Scripts/python.exe manage.py migrate --check 2>&1)",
+      "Bash(cd \"C:/Users/manuel/Desktop/js-games/server\" && .venv/Scripts/python.exe manage.py runserver 0.0.0.0:8000 2>&1)",
+      "Bash(cd \"C:/Users/manuel/Desktop/js-games/client\" && npx vite --host 0.0.0.0 2>&1)",
+      "Bash(which node 2>/dev/null || where node 2>/dev/null; which npm 2>/dev/null || where npm 2>/dev/null)",
+      "Bash(cmd.exe:*)",
+      "Bash(echo:*)",
+      "Bash(printenv PATH:*)",
+      "Bash(tail:*)",
+      "Bash(which node:*)"
     ]
   }
 }

@@ -8,6 +8,8 @@ export class InputManager {
       aimY: 0,
       aimJoystickActive: false, // true only when right joystick is held
       shooting: false,          // true when mouse button or joystick aim is active
+      aimJoystickJustReleased: false, // true for one frame on joystick release
+      mouseJustReleased: false,       // true for one frame on mouse release
       actions: {},
     };
 
@@ -17,6 +19,8 @@ export class InputManager {
     this._mouseAim = { x: 0, y: 0 };
     this._mouseActive = false;
     this._mouseButtonDown = false;
+    this._prevJoystickAimActive = false;
+    this._prevMouseButtonDown = false;
 
     this._bindKeyboard();
     this._bindMouse();
@@ -63,7 +67,8 @@ export class InputManager {
     this.state.actions[name] = active;
   }
 
-  getState() {
+  /** Call once per frame, before any systems run. */
+  tick() {
     // Always read keyboard
     let mx = 0, my = 0;
     if (this._keys.has('KeyW') || this._keys.has('ArrowUp')) my += 1;
@@ -92,6 +97,14 @@ export class InputManager {
     this.state.aimJoystickActive = joystickAimActive;
     this.state.shooting = this._mouseButtonDown || joystickAimActive;
 
+    // Detect release transitions (was active last frame, not active now)
+    this.state.aimJoystickJustReleased = this._prevJoystickAimActive && !joystickAimActive;
+    this.state.mouseJustReleased = this._prevMouseButtonDown && !this._mouseButtonDown;
+
+    // Store current state for next frame's release detection
+    this._prevJoystickAimActive = joystickAimActive;
+    this._prevMouseButtonDown = this._mouseButtonDown;
+
     if (joystickAimActive) {
       this.state.aimX = this._joystickAim.x;
       this.state.aimY = this._joystickAim.y;
@@ -99,7 +112,9 @@ export class InputManager {
       this.state.aimX = this._mouseAim.x;
       this.state.aimY = this._mouseAim.y;
     }
+  }
 
+  getState() {
     return this.state;
   }
 

@@ -11,6 +11,7 @@ import { MovementSystem } from './systems/MovementSystem.js';
 import { SprintSystem } from './systems/SprintSystem.js';
 import { CameraFollowSystem } from './systems/CameraFollowSystem.js';
 import { WeaponSystem } from './systems/WeaponSystem.js';
+import { LaserSightSystem } from './systems/LaserSightSystem.js';
 import { ProjectileSystem } from './systems/ProjectileSystem.js';
 import { EnemyRenderSystem } from './systems/EnemyRenderSystem.js';
 import { ItemRenderSystem } from './systems/ItemRenderSystem.js';
@@ -100,6 +101,7 @@ export class Game {
     };
 
     this._weaponSystem = new WeaponSystem(input, this.networkClient, this._audio);
+    this._laserSightSystem = new LaserSightSystem(renderer, input);
     this._sprintSystem = new SprintSystem(input);
 
     world.addSystem(new InputSystem(input));
@@ -107,6 +109,7 @@ export class Game {
     world.addSystem(this._sprintSystem);
     world.addSystem(new MovementSystem());
     world.addSystem(this._weaponSystem);
+    world.addSystem(this._laserSightSystem);
     world.addSystem(new CameraFollowSystem(cameraController));
     world.addSystem(this._networkSync);
     world.addSystem(this._projectileSystem);
@@ -188,6 +191,9 @@ export class Game {
     for (const [, mesh] of this._itemRenderSystem.meshes) {
       this.engine.renderer.remove(mesh);
     }
+
+    // Clean up laser sight
+    this._laserSightSystem.destroy();
 
     // Clean up effects
     this._effectsSystem.destroy();

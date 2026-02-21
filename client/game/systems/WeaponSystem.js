@@ -10,24 +10,12 @@ export class WeaponSystem extends System {
     this.inputManager = inputManager;
     this.networkClient = networkClient;
     this.audioManager = audioManager;
-    this._shooting = false;
     this._reloadRequested = false;
 
-    // Mouse click to shoot (desktop)
-    window.addEventListener('mousedown', (e) => {
-      if (e.button === 0) this._shooting = true;
-    });
-    window.addEventListener('mouseup', (e) => {
-      if (e.button === 0) this._shooting = false;
-    });
     // R key to reload
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyR') this._reloadRequested = true;
     });
-  }
-
-  setShooting(val) {
-    this._shooting = val;
   }
 
   requestReload() {
@@ -37,8 +25,8 @@ export class WeaponSystem extends System {
   update(dt) {
     const input = this.inputManager.getState();
 
-    // Auto-fire when right joystick (aim) is active on mobile
-    const wantShoot = this._shooting || input.aimJoystickActive;
+    // Fire on release: shoot when mouse or joystick aim is released
+    const wantShoot = input.mouseJustReleased || input.aimJoystickJustReleased;
 
     const entities = this.world.query(PlayerControlled, Weapon, Health, Rotation);
 

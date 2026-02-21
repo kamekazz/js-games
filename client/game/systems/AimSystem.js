@@ -18,11 +18,13 @@ export class AimSystem extends System {
 
       const rot = entity.get(Rotation);
 
-      // Face aim direction only when actively shooting (mouse click or joystick aim)
+      // Face aim direction while holding aim input (mouse click or joystick aim)
+      // On the release frame, preserve the aimed rotation so the shot fires correctly
       // Otherwise face the movement direction
+      const justReleased = input.mouseJustReleased || input.aimJoystickJustReleased;
       if (input.shooting && (input.aimX !== 0 || input.aimY !== 0)) {
         rot.angle = Math.atan2(input.aimY, input.aimX);
-      } else if (input.moveX !== 0 || input.moveY !== 0) {
+      } else if (!justReleased && (input.moveX !== 0 || input.moveY !== 0)) {
         rot.angle = Math.atan2(input.moveY, input.moveX);
       }
     }
