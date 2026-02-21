@@ -9,7 +9,7 @@ export class PauseMenu {
     this.btn = document.createElement('button');
     this.btn.textContent = '|||';
     this.btn.style.cssText = `
-      position: fixed; top: 12px; left: 12px; z-index: 20;
+      position: fixed; top: 12px; right: 12px; z-index: 20;
       width: 40px; height: 40px; border-radius: 8px;
       border: 2px solid rgba(255,255,255,0.3); background: rgba(0,0,0,0.5);
       color: white; font-size: 16px; font-weight: bold; cursor: pointer;

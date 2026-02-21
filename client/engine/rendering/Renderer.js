@@ -24,8 +24,8 @@ export class Renderer {
       0.1,
       200
     );
-    // Slightly tilted top-down (not pure overhead) so you see the side of characters
-    this.camera.position.set(0, 50, 8);
+    // Isometric-style 3/4 view — tilted enough to see character sides
+    this.camera.position.set(0, 40, 25);
     this.camera.lookAt(0, 0, 0);
 
     // Lighting

@@ -2,31 +2,33 @@ export class HUD {
   constructor(container) {
     this.el = document.createElement('div');
     this.el.style.cssText = `
-      position: absolute; bottom: 0; left: 0; right: 0;
-      pointer-events: none; padding: 16px 20px;
-      display: flex; justify-content: space-between; align-items: flex-end;
+      position: absolute; top: 0; left: 0; right: 0;
+      pointer-events: none; padding: 12px 20px;
+      display: flex; justify-content: space-between; align-items: flex-start;
       font-family: Arial, sans-serif; color: white; z-index: 15;
     `;
     this.el.innerHTML = `
-      <div id="hud-left" style="display: flex; flex-direction: column; gap: 6px;">
-        <div style="font-size: 13px; color: #aaa;">HP</div>
-        <div style="width: 180px; height: 16px; background: #333; border-radius: 8px; overflow: hidden;">
-          <div id="hud-hp-bar" style="width: 100%; height: 100%; background: #44cc44; border-radius: 8px; transition: width 0.2s;"></div>
+      <div id="hud-left" style="display: flex; flex-direction: column; gap: 4px;">
+        <div style="font-size: 11px; color: #aaa;">HP</div>
+        <div style="width: 140px; height: 14px; background: #333; border-radius: 7px; overflow: hidden;">
+          <div id="hud-hp-bar" style="width: 100%; height: 100%; background: #44cc44; border-radius: 7px; transition: width 0.2s;"></div>
         </div>
-        <div style="font-size: 13px; color: #aaa; margin-top: 4px;">Stamina</div>
-        <div style="width: 140px; height: 10px; background: #333; border-radius: 5px; overflow: hidden;">
-          <div id="hud-stamina-bar" style="width: 100%; height: 100%; background: #44aaff; border-radius: 5px; transition: width 0.15s;"></div>
+        <div style="font-size: 11px; color: #aaa; margin-top: 2px;">Stamina</div>
+        <div style="width: 110px; height: 8px; background: #333; border-radius: 4px; overflow: hidden;">
+          <div id="hud-stamina-bar" style="width: 100%; height: 100%; background: #44aaff; border-radius: 4px; transition: width 0.15s;"></div>
         </div>
-        <div id="hud-kills" style="font-size: 13px; color: #ccc; margin-top: 4px;">Kills: 0</div>
-        <div id="hud-score" style="font-size: 15px; color: #ffcc44; font-weight: bold; margin-top: 2px;">Score: 0</div>
       </div>
-      <div id="hud-center" style="text-align: center;">
-        <div id="hud-wave" style="font-size: 15px; color: #ffcc44; font-weight: bold; margin-bottom: 4px;"></div>
-        <div id="hud-kill-feed" style="font-size: 13px; color: #ff8888; min-height: 20px;"></div>
+      <div id="hud-center" style="text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+        <div id="hud-wave" style="font-size: 13px; color: #ffcc44; font-weight: bold;"></div>
+        <div style="display: flex; gap: 14px; align-items: center;">
+          <div id="hud-kills" style="font-size: 13px; color: #ccc;">Kills: 0</div>
+          <div id="hud-score" style="font-size: 14px; color: #ffcc44; font-weight: bold;">Score: 0</div>
+        </div>
+        <div id="hud-kill-feed" style="font-size: 12px; color: #ff8888; min-height: 18px;"></div>
       </div>
-      <div id="hud-right" style="text-align: right;">
-        <div id="hud-ammo" style="font-size: 22px; font-weight: bold;">12 / 12</div>
-        <div id="hud-reload-hint" style="font-size: 12px; color: #888; display: none;">[R] Reload</div>
+      <div id="hud-right" style="text-align: right; margin-top: 44px;">
+        <div id="hud-ammo" style="font-size: 20px; font-weight: bold;">12 / 12</div>
+        <div id="hud-reload-hint" style="font-size: 11px; color: #888; display: none;">[R] Reload</div>
       </div>
     `;
     container.appendChild(this.el);
