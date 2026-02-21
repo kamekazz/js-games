@@ -77,6 +77,8 @@ function joinRoom(roomCode, playerName) {
         showMenu();
       });
     });
+    // Wire up pause menu "Leave Game" button
+    currentGame.onLeave = () => showMenu();
     engine.start();
   });
 

@@ -3,6 +3,7 @@ import { TileRenderer } from '@engine/rendering/TileRenderer.js';
 import { VirtualJoystick } from '@ui/VirtualJoystick.js';
 import { ActionButton } from '@ui/ActionButton.js';
 import { HUD } from '@ui/HUD.js';
+import { PauseMenu } from '@ui/PauseMenu.js';
 import { InputSystem } from './systems/InputSystem.js';
 import { AimSystem } from './systems/AimSystem.js';
 import { MovementSystem } from './systems/MovementSystem.js';
@@ -27,11 +28,13 @@ export class Game {
     this.spawnX = spawnX;
     this.spawnY = spawnY;
     this.onGameOver = onGameOver;
+    this.onLeave = null; // set externally
     this._joysticks = [];
     this._buttons = [];
     this._sceneObjects = [];
     this.hud = null;
     this._scoreboard = null;
+    this._pauseMenu = null;
     this._setup();
   }
 
@@ -61,6 +64,10 @@ export class Game {
 
     this._scoreboard = new Scoreboard();
     this._networkSync.scoreboard = this._scoreboard;
+
+    this._pauseMenu = new PauseMenu(() => {
+      if (this.onLeave) this.onLeave();
+    });
   }
 
   _registerSystems() {
@@ -129,15 +136,6 @@ export class Game {
     const container = document.getElementById('action-buttons');
     if (!container) return;
 
-    const fireBtn = new ActionButton(container, {
-      label: 'FIRE',
-      size: 70,
-      color: 'rgba(255,68,68,0.5)',
-      onPress: () => this._weaponSystem.setShooting(true),
-      onRelease: () => this._weaponSystem.setShooting(false),
-    });
-    this._buttons.push(fireBtn);
-
     const reloadBtn = new ActionButton(container, {
       label: 'R',
       size: 50,
@@ -154,6 +152,7 @@ export class Game {
     this._buttons = [];
     if (this.hud) { this.hud.destroy(); this.hud = null; }
     if (this._scoreboard) { this._scoreboard.destroy(); this._scoreboard = null; }
+    if (this._pauseMenu) { this._pauseMenu.destroy(); this._pauseMenu = null; }
 
     // Clean up projectile meshes
     for (const [, mesh] of this._projectileSystem.meshes) {

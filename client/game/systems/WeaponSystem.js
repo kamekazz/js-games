@@ -11,13 +11,16 @@ export class WeaponSystem extends System {
     this._shooting = false;
     this._reloadRequested = false;
 
-    // Listen for keyboard
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space') this._shooting = true;
-      if (e.code === 'KeyR') this._reloadRequested = true;
+    // Mouse click to shoot (desktop)
+    window.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this._shooting = true;
     });
-    window.addEventListener('keyup', (e) => {
-      if (e.code === 'Space') this._shooting = false;
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this._shooting = false;
+    });
+    // R key to reload
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyR') this._reloadRequested = true;
     });
   }
 
