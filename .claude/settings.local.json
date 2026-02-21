@@ -37,7 +37,8 @@
       "Bash(echo:*)",
       "Bash(printenv PATH:*)",
       "Bash(tail:*)",
-      "Bash(which node:*)"
+      "Bash(which node:*)",
+      "Bash(/c/Users/manuel/Desktop/js-games/server/.venv/Scripts/python.exe:*)"
     ]
   }
 }
