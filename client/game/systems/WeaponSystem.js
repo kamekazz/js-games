@@ -2,6 +2,7 @@ import { System } from '@engine/ecs/System.js';
 import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Weapon } from '../components/Weapon.js';
 import { Health } from '../components/Health.js';
+import { Rotation } from '../components/Rotation.js';
 
 export class WeaponSystem extends System {
   constructor(inputManager, networkClient) {
@@ -38,7 +39,7 @@ export class WeaponSystem extends System {
     // Auto-fire when right joystick (aim) is active on mobile
     const wantShoot = this._shooting || input.aimJoystickActive;
 
-    const entities = this.world.query(PlayerControlled, Weapon, Health);
+    const entities = this.world.query(PlayerControlled, Weapon, Health, Rotation);
 
     for (const entity of entities) {
       const pc = entity.get(PlayerControlled);
@@ -64,9 +65,10 @@ export class WeaponSystem extends System {
         this._reloadRequested = false;
       }
 
-      // Shoot
+      // Shoot — send current angle so server uses the right direction immediately
       if (wantShoot && weapon.cooldown <= 0 && !weapon.reloading && weapon.ammo > 0) {
-        this.networkClient.send({ type: 'player_shoot' });
+        const angle = entity.get(Rotation).angle;
+        this.networkClient.send({ type: 'player_shoot', angle });
         weapon.cooldown = weapon.fireRate;
         weapon.ammo--;
       }

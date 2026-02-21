@@ -7,6 +7,7 @@ export class InputManager {
       aimX: 0,
       aimY: 0,
       aimJoystickActive: false, // true only when right joystick is held
+      shooting: false,          // true when mouse button or joystick aim is active
       actions: {},
     };
 
@@ -15,6 +16,7 @@ export class InputManager {
     this._joystickAim = { x: 0, y: 0 };
     this._mouseAim = { x: 0, y: 0 };
     this._mouseActive = false;
+    this._mouseButtonDown = false;
 
     this._bindKeyboard();
     this._bindMouse();
@@ -38,6 +40,12 @@ export class InputManager {
       this._mouseAim.x = (e.clientX / window.innerWidth) * 2 - 1;
       this._mouseAim.y = -((e.clientY / window.innerHeight) * 2 - 1); // flip Y: screen-down is negative
       this._mouseActive = true;
+    });
+    window.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this._mouseButtonDown = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this._mouseButtonDown = false;
     });
   }
 
@@ -82,6 +90,7 @@ export class InputManager {
     // Aim: joystick > mouse
     const joystickAimActive = this._joystickAim.x !== 0 || this._joystickAim.y !== 0;
     this.state.aimJoystickActive = joystickAimActive;
+    this.state.shooting = this._mouseButtonDown || joystickAimActive;
 
     if (joystickAimActive) {
       this.state.aimX = this._joystickAim.x;

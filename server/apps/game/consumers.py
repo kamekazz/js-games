@@ -45,7 +45,7 @@ class GameConsumer(AsyncWebsocketConsumer):
         elif msg_type == 'player_move':
             await self._handle_move(data)
         elif msg_type == 'player_shoot':
-            self._handle_shoot()
+            self._handle_shoot(data)
         elif msg_type == 'player_reload':
             self._handle_reload()
 
@@ -89,9 +89,15 @@ class GameConsumer(AsyncWebsocketConsumer):
                 float(data.get('angle', 0)),
             )
 
-    def _handle_shoot(self):
+    def _handle_shoot(self, data):
         room = game_manager.rooms.get(self.room_code)
         if room and self.player_id:
+            angle = data.get('angle')
+            if angle is not None:
+                # Update player angle immediately so projectile uses correct direction
+                player = room.players.get(self.player_id)
+                if player:
+                    player.angle = float(angle)
             room.process_shoot(self.player_id)
 
     def _handle_reload(self):
