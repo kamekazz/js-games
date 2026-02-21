@@ -5,10 +5,17 @@ This runs in the same process as Django Channels (Daphne/ASGI).
 import time
 import math
 import random
+import logging
 from .zombies import ZombieState, WaveSpawner, ZOMBIE_TYPES
+
+logger = logging.getLogger('game.anticheat')
 
 PLAYER_SPEED = 12
 PLAYER_SPRINT_MULTIPLIER = 1.7
+# Anti-cheat: max allowed speed (sprint + small tolerance)
+MAX_SPEED = PLAYER_SPEED * PLAYER_SPRINT_MULTIPLIER * 1.1
+# Minimum fire cooldown to accept (anti-rapid-fire)
+MIN_FIRE_INTERVAL = 0.15
 WORLD_SIZE = 100
 TICK_RATE = 20
 TICK_INTERVAL = 1.0 / TICK_RATE
@@ -88,7 +95,7 @@ class PlayerState:
         'health', 'alive', 'respawn_timer',
         'weapon_id', 'ammo', 'mag_size', 'fire_cooldown', 'reload_timer', 'reloading',
         'score', 'zombie_kills', 'deaths', 'shots_fired', 'shots_hit',
-        'sprinting',
+        'sprinting', '_last_shot_time',
     )
 
     def __init__(self, player_id, display_name='Player'):
@@ -119,6 +126,8 @@ class PlayerState:
         self.shots_hit = 0
         # Sprint
         self.sprinting = False
+        # Anti-cheat
+        self._last_shot_time = 0.0
 
     def to_dict(self):
         return {
@@ -188,6 +197,13 @@ class GameRoom:
 
         if player.ammo <= 0:
             return
+
+        # Anti-cheat: enforce minimum fire interval
+        now = time.time()
+        if now - player._last_shot_time < MIN_FIRE_INTERVAL:
+            logger.warning('Rapid fire from %s (%.3fs)', player_id, now - last_shot)
+            return
+        player._last_shot_time = now
 
         weapon = WEAPONS[player.weapon_id]
         player.ammo -= 1

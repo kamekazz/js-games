@@ -1,0 +1,36 @@
+version: "3.8"
+
+# Development override: mounts source, uses runserver + vite dev
+# Usage: docker-compose -f docker-compose.dev.yml up
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  django:
+    build: ./server
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - ./server:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+
+  client:
+    build:
+      context: .
+      dockerfile: ./client/Dockerfile
+    command: sh -c "cd /app/client && npm run dev -- --host 0.0.0.0"
+    volumes:
+      - ./client:/app/client
+      - ./shared:/app/shared
+      - /app/client/node_modules
+    ports:
+      - "5173:5173"
+    depends_on:
+      - django

@@ -1,8 +1,12 @@
+import { api } from '@engine/network/ApiClient.js';
+
 export class MainMenu {
-  constructor(sceneManager, onCreateRoom, onJoinRoom) {
+  constructor(sceneManager, onCreateRoom, onJoinRoom, displayName = 'Player', onLogout = null) {
     this.sceneManager = sceneManager;
     this.onCreateRoom = onCreateRoom;
     this.onJoinRoom = onJoinRoom;
+    this.displayName = displayName;
+    this.onLogout = onLogout;
     this.el = null;
   }
 
@@ -14,10 +18,14 @@ export class MainMenu {
       pointer-events: auto; background: rgba(0,0,0,0.7); color: white; font-family: Arial, sans-serif;
     `;
     this.el.innerHTML = `
+      <div style="position: absolute; top: 16px; right: 20px; display: flex; align-items: center; gap: 12px;">
+        <span style="color: #aaa; font-size: 14px;">${this.displayName}</span>
+        <button id="menu-logout" style="padding: 6px 14px; border-radius: 6px; border: 1px solid #666; background: transparent; color: #888; font-size: 13px; cursor: pointer;">Logout</button>
+      </div>
       <h1 style="font-size: 2.5rem; margin-bottom: 0.5rem; color: #ff4444;">ZOMBIE SURVIVAL</h1>
       <p style="color: #888; margin-bottom: 2rem;">Top-down multiplayer survival</p>
       <div style="display: flex; flex-direction: column; gap: 12px; width: 280px;">
-        <input id="menu-name" type="text" placeholder="Your name" maxlength="20"
+        <input id="menu-name" type="text" placeholder="Your name" maxlength="20" value="${this.displayName}"
           style="padding: 12px; border-radius: 8px; border: 1px solid #444; background: #222; color: white; font-size: 16px; text-align: center;" />
         <button id="menu-create" style="padding: 14px; border-radius: 8px; border: none; background: #4488ff; color: white; font-size: 16px; font-weight: bold; cursor: pointer;">
           Create Room
@@ -50,13 +58,16 @@ export class MainMenu {
       this.onJoinRoom(code, name);
     });
 
-    // Load room list
+    this.el.querySelector('#menu-logout').addEventListener('click', () => {
+      if (this.onLogout) this.onLogout();
+    });
+
     this._loadRooms();
   }
 
   async _loadRooms() {
     try {
-      const res = await fetch('/api/rooms/');
+      const res = await api.get('/api/rooms/');
       if (!res.ok) return;
       const rooms = await res.json();
       const container = this.el.querySelector('#menu-rooms');
@@ -77,7 +88,7 @@ export class MainMenu {
         });
       });
     } catch (e) {
-      // API not available, that's fine
+      // API not available
     }
   }
 
