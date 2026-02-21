@@ -1,0 +1,75 @@
+*, *::before, *::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #111;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#game-container {
+  width: 100%;
+  height: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+}
+
+#game-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+#ui-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+#joystick-zone-left {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  width: 150px;
+  height: 150px;
+  pointer-events: auto;
+}
+
+#joystick-zone-right {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 150px;
+  height: 150px;
+  pointer-events: auto;
+}
+
+#action-buttons {
+  position: absolute;
+  bottom: 200px;
+  right: 30px;
+  pointer-events: auto;
+}
+
+/* Hide mobile controls on desktop */
+@media (min-width: 1024px) and (pointer: fine) {
+  #joystick-zone-left,
+  #joystick-zone-right,
+  #action-buttons {
+    display: none;
+  }
+}
