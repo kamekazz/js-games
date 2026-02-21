@@ -13,6 +13,10 @@ export class HUD {
         <div style="width: 180px; height: 16px; background: #333; border-radius: 8px; overflow: hidden;">
           <div id="hud-hp-bar" style="width: 100%; height: 100%; background: #44cc44; border-radius: 8px; transition: width 0.2s;"></div>
         </div>
+        <div style="font-size: 13px; color: #aaa; margin-top: 4px;">Stamina</div>
+        <div style="width: 140px; height: 10px; background: #333; border-radius: 5px; overflow: hidden;">
+          <div id="hud-stamina-bar" style="width: 100%; height: 100%; background: #44aaff; border-radius: 5px; transition: width 0.15s;"></div>
+        </div>
         <div id="hud-kills" style="font-size: 13px; color: #ccc; margin-top: 4px;">Kills: 0</div>
         <div id="hud-score" style="font-size: 15px; color: #ffcc44; font-weight: bold; margin-top: 2px;">Score: 0</div>
       </div>
@@ -28,6 +32,7 @@ export class HUD {
     container.appendChild(this.el);
 
     this._hpBar = this.el.querySelector('#hud-hp-bar');
+    this._staminaBar = this.el.querySelector('#hud-stamina-bar');
     this._ammo = this.el.querySelector('#hud-ammo');
     this._reloadHint = this.el.querySelector('#hud-reload-hint');
     this._killFeed = this.el.querySelector('#hud-kill-feed');
@@ -56,6 +61,13 @@ export class HUD {
     if (pct > 50) this._hpBar.style.background = '#44cc44';
     else if (pct > 25) this._hpBar.style.background = '#ccaa22';
     else this._hpBar.style.background = '#cc2222';
+  }
+
+  updateStamina(current, max) {
+    const pct = Math.max(0, current / max) * 100;
+    this._staminaBar.style.width = pct + '%';
+    if (pct > 30) this._staminaBar.style.background = '#44aaff';
+    else this._staminaBar.style.background = '#aa4444';
   }
 
   updateAmmo(current, max, reloading) {

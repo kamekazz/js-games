@@ -1,5 +1,6 @@
 import { isTouchDevice } from '@engine/input/DeviceDetector.js';
 import { TileRenderer } from '@engine/rendering/TileRenderer.js';
+import { AudioManager } from '@engine/audio/AudioManager.js';
 import { VirtualJoystick } from '@ui/VirtualJoystick.js';
 import { ActionButton } from '@ui/ActionButton.js';
 import { HUD } from '@ui/HUD.js';
@@ -7,11 +8,13 @@ import { PauseMenu } from '@ui/PauseMenu.js';
 import { InputSystem } from './systems/InputSystem.js';
 import { AimSystem } from './systems/AimSystem.js';
 import { MovementSystem } from './systems/MovementSystem.js';
+import { SprintSystem } from './systems/SprintSystem.js';
 import { CameraFollowSystem } from './systems/CameraFollowSystem.js';
 import { WeaponSystem } from './systems/WeaponSystem.js';
 import { ProjectileSystem } from './systems/ProjectileSystem.js';
 import { EnemyRenderSystem } from './systems/EnemyRenderSystem.js';
 import { ItemRenderSystem } from './systems/ItemRenderSystem.js';
+import { EffectsSystem } from './systems/EffectsSystem.js';
 import { NetworkSyncSystem } from './systems/NetworkSyncSystem.js';
 import { RenderSyncSystem } from './systems/RenderSyncSystem.js';
 import { Scoreboard } from '@ui/Scoreboard.js';
@@ -35,6 +38,7 @@ export class Game {
     this.hud = null;
     this._scoreboard = null;
     this._pauseMenu = null;
+    this._audio = new AudioManager();
     this._setup();
   }
 
@@ -87,14 +91,20 @@ export class Game {
     this._itemRenderSystem = new ItemRenderSystem(renderer);
     this._networkSync.itemRenderSystem = this._itemRenderSystem;
 
+    this._effectsSystem = new EffectsSystem(renderer);
+    this._networkSync.effectsSystem = this._effectsSystem;
+    this._networkSync.audioManager = this._audio;
+
     this._networkSync.onGameOver = (data) => {
       if (this.onGameOver) this.onGameOver(data);
     };
 
-    this._weaponSystem = new WeaponSystem(input, this.networkClient);
+    this._weaponSystem = new WeaponSystem(input, this.networkClient, this._audio);
+    this._sprintSystem = new SprintSystem(input);
 
     world.addSystem(new InputSystem(input));
     world.addSystem(new AimSystem(input));
+    world.addSystem(this._sprintSystem);
     world.addSystem(new MovementSystem());
     world.addSystem(this._weaponSystem);
     world.addSystem(new CameraFollowSystem(cameraController));
@@ -102,6 +112,7 @@ export class Game {
     world.addSystem(this._projectileSystem);
     world.addSystem(this._enemyRenderSystem);
     world.addSystem(this._itemRenderSystem);
+    world.addSystem(this._effectsSystem);
     world.addSystem(new RenderSyncSystem());
   }
 
@@ -143,6 +154,15 @@ export class Game {
       onPress: () => this._weaponSystem.requestReload(),
     });
     this._buttons.push(reloadBtn);
+
+    const sprintBtn = new ActionButton(container, {
+      label: 'Sprint',
+      size: 50,
+      color: 'rgba(68,200,255,0.5)',
+      onPress: () => this._sprintSystem.setSprinting(true),
+      onRelease: () => this._sprintSystem.setSprinting(false),
+    });
+    this._buttons.push(sprintBtn);
   }
 
   destroy() {
@@ -168,6 +188,12 @@ export class Game {
     for (const [, mesh] of this._itemRenderSystem.meshes) {
       this.engine.renderer.remove(mesh);
     }
+
+    // Clean up effects
+    this._effectsSystem.destroy();
+
+    // Clean up audio
+    this._audio.destroy();
 
     for (const obj of this._sceneObjects) {
       this.engine.renderer.remove(obj);

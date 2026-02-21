@@ -5,10 +5,11 @@ import { Health } from '../components/Health.js';
 import { Rotation } from '../components/Rotation.js';
 
 export class WeaponSystem extends System {
-  constructor(inputManager, networkClient) {
+  constructor(inputManager, networkClient, audioManager) {
     super(15); // after movement
     this.inputManager = inputManager;
     this.networkClient = networkClient;
+    this.audioManager = audioManager;
     this._shooting = false;
     this._reloadRequested = false;
 
@@ -56,6 +57,7 @@ export class WeaponSystem extends System {
       if (weapon.ammo <= 0 && !weapon.reloading) {
         this.networkClient.send({ type: 'player_reload' });
         weapon.reloading = true;
+        if (this.audioManager) this.audioManager.playReload();
       }
 
       // Manual reload
@@ -63,6 +65,7 @@ export class WeaponSystem extends System {
         this.networkClient.send({ type: 'player_reload' });
         weapon.reloading = true;
         this._reloadRequested = false;
+        if (this.audioManager) this.audioManager.playReload();
       }
 
       // Shoot — send current angle so server uses the right direction immediately

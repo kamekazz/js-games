@@ -87,6 +87,7 @@ class GameConsumer(AsyncWebsocketConsumer):
                 float(data.get('mx', 0)),
                 float(data.get('my', 0)),
                 float(data.get('angle', 0)),
+                sprinting=data.get('sprint', False),
             )
 
     def _handle_shoot(self, data):

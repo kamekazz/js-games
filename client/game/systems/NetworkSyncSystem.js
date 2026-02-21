@@ -9,6 +9,7 @@ import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Velocity } from '../components/Velocity.js';
 import { Health } from '../components/Health.js';
 import { Weapon } from '../components/Weapon.js';
+import { Sprint } from '../components/Sprint.js';
 
 export class NetworkSyncSystem extends System {
   constructor(networkClient, stateBuffer, renderer, inputManager) {
@@ -24,6 +25,8 @@ export class NetworkSyncSystem extends System {
     this.scoreboard = null;        // set by Game.js
     this.hud = null;               // set by Game.js
     this.onGameOver = null;        // callback set by Game.js
+    this.effectsSystem = null;     // set by Game.js
+    this.audioManager = null;      // set by Game.js
     this._sendInterval = 1000 / 20;
     this._lastSendTime = 0;
     this._serverTimeOffset = 0;
@@ -66,10 +69,13 @@ export class NetworkSyncSystem extends System {
 
     const input = this.inputManager.getState();
     let angle = 0;
+    let sprinting = false;
     const locals = this.world.query(PlayerControlled, Rotation);
     for (const e of locals) {
       if (e.get(PlayerControlled).isLocal) {
         angle = e.get(Rotation).angle;
+        const sprint = e.get(Sprint);
+        if (sprint) sprinting = sprint.isSprinting;
         break;
       }
     }
@@ -79,6 +85,7 @@ export class NetworkSyncSystem extends System {
       mx: input.moveX,
       my: input.moveY,
       angle,
+      sprint: sprinting,
     });
   }
 
@@ -169,6 +176,8 @@ export class NetworkSyncSystem extends System {
         if (this.hud) {
           this.hud.updateHealth(pd.hp, 100);
           this.hud.updateAmmo(pd.ammo, pd.maxAmmo, pd.reloading);
+          const sprint = e.get(Sprint);
+          if (sprint) this.hud.updateStamina(sprint.stamina, sprint.maxStamina);
         }
       }
       break;
@@ -178,20 +187,40 @@ export class NetworkSyncSystem extends System {
   _processEvents() {
     if (!this.hud) return;
     for (const evt of this._latestEvents) {
-      if (evt.type === 'kill') {
+      if (evt.type === 'shoot') {
+        if (this.audioManager) this.audioManager.playShoot();
+        if (this.effectsSystem) this.effectsSystem.spawnMuzzleFlash(evt.x, evt.y, evt.angle);
+      } else if (evt.type === 'proj_hit') {
+        if (this.audioManager) this.audioManager.playZombieHit();
+        if (this.effectsSystem) this.effectsSystem.spawnHitSparks(evt.x, evt.y);
+      } else if (evt.type === 'hit' || evt.type === 'zombie_hit') {
+        if (evt.type === 'zombie_hit' && evt.pid === this.localPlayerId) {
+          if (this.audioManager) this.audioManager.playPlayerHit();
+        }
+        // Find position for blood burst
+        const target = this._findPlayerPos(evt.pid);
+        if (target && this.effectsSystem) this.effectsSystem.spawnBloodBurst(target.x, target.y);
+      } else if (evt.type === 'kill') {
         const killer = evt.by === 'zombie' ? 'Zombie' : this._findPlayerName(evt.by);
         const victim = this._findPlayerName(evt.pid);
         if (evt.pid === this.localPlayerId) {
           this.hud.showDeath();
+          if (this.audioManager) this.audioManager.playDeath();
         } else {
           this.hud.showKill(killer, victim);
         }
+      } else if (evt.type === 'zombie_kill') {
+        if (this.audioManager) this.audioManager.playZombieDeath();
+        if (this.effectsSystem && evt.x != null) {
+          this.effectsSystem.spawnDeathBurst(evt.x, evt.y);
+        }
+        if (evt.by === this.localPlayerId) this.hud.addKill();
       } else if (evt.type === 'wave_start') {
         this.hud.showWave(evt.wave);
-      } else if (evt.type === 'zombie_kill' && evt.by === this.localPlayerId) {
-        this.hud.addKill();
+        if (this.audioManager) this.audioManager.playWaveStart();
       } else if (evt.type === 'item_pickup' && evt.pid === this.localPlayerId) {
         this.hud.showPickup(evt.item);
+        if (this.audioManager) this.audioManager.playPickup();
       } else if (evt.type === 'game_over') {
         if (this.onGameOver) this.onGameOver(evt);
       }
@@ -214,6 +243,18 @@ export class NetworkSyncSystem extends System {
     if (!this._latestState) return 'Player';
     const p = this._latestState.players.find(p => p.id === pid);
     return p ? p.name : 'Player';
+  }
+
+  _findPlayerPos(pid) {
+    if (!this._latestState) return null;
+    const p = this._latestState.players.find(p => p.id === pid);
+    return p ? { x: p.x, y: p.y } : null;
+  }
+
+  _findZombiePos(zid) {
+    if (!this._latestState || !this._latestState.zombies) return null;
+    const z = this._latestState.zombies.find(z => z.id === zid);
+    return z ? { x: z.x, y: z.y } : null;
   }
 
   _updateProjectiles() {

@@ -8,6 +8,7 @@ import random
 from .zombies import ZombieState, WaveSpawner, ZOMBIE_TYPES
 
 PLAYER_SPEED = 12
+PLAYER_SPRINT_MULTIPLIER = 1.7
 WORLD_SIZE = 100
 TICK_RATE = 20
 TICK_INTERVAL = 1.0 / TICK_RATE
@@ -87,6 +88,7 @@ class PlayerState:
         'health', 'alive', 'respawn_timer',
         'weapon_id', 'ammo', 'mag_size', 'fire_cooldown', 'reload_timer', 'reloading',
         'score', 'zombie_kills', 'deaths', 'shots_fired', 'shots_hit',
+        'sprinting',
     )
 
     def __init__(self, player_id, display_name='Player'):
@@ -115,6 +117,8 @@ class PlayerState:
         self.deaths = 0
         self.shots_fired = 0
         self.shots_hit = 0
+        # Sprint
+        self.sprinting = False
 
     def to_dict(self):
         return {
@@ -159,7 +163,7 @@ class GameRoom:
     def remove_player(self, player_id):
         self.players.pop(player_id, None)
 
-    def process_input(self, player_id, move_x, move_y, angle):
+    def process_input(self, player_id, move_x, move_y, angle, sprinting=False):
         player = self.players.get(player_id)
         if not player or not player.alive:
             return
@@ -172,6 +176,7 @@ class GameRoom:
         player.vx = move_x
         player.vy = move_y
         player.angle = angle
+        player.sprinting = bool(sprinting) and (move_x != 0 or move_y != 0)
 
     def process_shoot(self, player_id):
         player = self.players.get(player_id)
@@ -266,8 +271,9 @@ class GameRoom:
                 continue
 
             # Movement
-            player.x += player.vx * PLAYER_SPEED * dt
-            player.y += player.vy * PLAYER_SPEED * dt
+            speed = PLAYER_SPEED * (PLAYER_SPRINT_MULTIPLIER if player.sprinting else 1.0)
+            player.x += player.vx * speed * dt
+            player.y += player.vy * speed * dt
             player.x = max(-half, min(half, player.x))
             player.y = max(-half, min(half, player.y))
 
@@ -380,6 +386,11 @@ class GameRoom:
                     shooter = self.players.get(proj.owner_id)
                     if shooter:
                         shooter.shots_hit += 1
+                    self.events.append({
+                        'type': 'proj_hit',
+                        'x': round(zombie.x, 2),
+                        'y': round(zombie.y, 2),
+                    })
                     if zombie.health <= 0:
                         zombie.health = 0
                         zombie.alive = False
@@ -393,6 +404,8 @@ class GameRoom:
                             'zid': zombie.id,
                             'by': proj.owner_id,
                             'xp': zombie.xp,
+                            'x': round(zombie.x, 2),
+                            'y': round(zombie.y, 2),
                         })
                         # Item drop
                         if random.random() < ITEM_DROP_CHANCE:
