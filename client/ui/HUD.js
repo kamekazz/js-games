@@ -13,8 +13,10 @@ export class HUD {
         <div style="width: 180px; height: 16px; background: #333; border-radius: 8px; overflow: hidden;">
           <div id="hud-hp-bar" style="width: 100%; height: 100%; background: #44cc44; border-radius: 8px; transition: width 0.2s;"></div>
         </div>
+        <div id="hud-kills" style="font-size: 13px; color: #ccc; margin-top: 4px;">Kills: 0</div>
       </div>
       <div id="hud-center" style="text-align: center;">
+        <div id="hud-wave" style="font-size: 15px; color: #ffcc44; font-weight: bold; margin-bottom: 4px;"></div>
         <div id="hud-kill-feed" style="font-size: 13px; color: #ff8888; min-height: 20px;"></div>
       </div>
       <div id="hud-right" style="text-align: right;">
@@ -28,7 +30,21 @@ export class HUD {
     this._ammo = this.el.querySelector('#hud-ammo');
     this._reloadHint = this.el.querySelector('#hud-reload-hint');
     this._killFeed = this.el.querySelector('#hud-kill-feed');
+    this._waveEl = this.el.querySelector('#hud-wave');
+    this._killsEl = this.el.querySelector('#hud-kills');
+    this._killCount = 0;
     this._killTimeout = null;
+    this._waveTimeout = null;
+
+    // Wave announcement overlay (big centered text)
+    this._waveAnnounce = document.createElement('div');
+    this._waveAnnounce.style.cssText = `
+      position: fixed; top: 20%; left: 50%; transform: translateX(-50%);
+      font-size: 48px; font-weight: bold; color: #ffcc44;
+      text-shadow: 0 0 20px rgba(255,200,0,0.5); font-family: Arial, sans-serif;
+      pointer-events: none; z-index: 25; opacity: 0; transition: opacity 0.5s;
+    `;
+    document.body.appendChild(this._waveAnnounce);
   }
 
   updateHealth(current, max) {
@@ -65,8 +81,30 @@ export class HUD {
     }, 3000);
   }
 
+  updateWave(wave, active) {
+    if (wave > 0) {
+      this._waveEl.textContent = `Wave ${wave}${active ? '' : ' - Complete!'}`;
+    }
+  }
+
+  showWave(wave) {
+    this._waveAnnounce.textContent = `Wave ${wave}`;
+    this._waveAnnounce.style.opacity = '1';
+    if (this._waveTimeout) clearTimeout(this._waveTimeout);
+    this._waveTimeout = setTimeout(() => {
+      this._waveAnnounce.style.opacity = '0';
+    }, 2500);
+  }
+
+  addKill() {
+    this._killCount++;
+    this._killsEl.textContent = `Kills: ${this._killCount}`;
+  }
+
   destroy() {
     if (this._killTimeout) clearTimeout(this._killTimeout);
+    if (this._waveTimeout) clearTimeout(this._waveTimeout);
+    this._waveAnnounce.remove();
     this.el.remove();
   }
 }

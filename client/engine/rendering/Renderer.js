@@ -14,7 +14,7 @@ export class Renderer {
     this.scene = new THREE.Scene();
 
     // Orthographic camera (top-down)
-    this.viewSize = 50;
+    this.viewSize = 25;
     const aspect = window.innerWidth / window.innerHeight;
     this.camera = new THREE.OrthographicCamera(
       -this.viewSize * aspect / 2,

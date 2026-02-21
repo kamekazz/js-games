@@ -19,6 +19,7 @@ export class NetworkSyncSystem extends System {
     this.inputManager = inputManager;
     this.localPlayerId = null;
     this.projectileSystem = null; // set by Game.js
+    this.enemyRenderSystem = null; // set by Game.js
     this.hud = null;              // set by Game.js
     this._sendInterval = 1000 / 20;
     this._lastSendTime = 0;
@@ -47,6 +48,7 @@ export class NetworkSyncSystem extends System {
     this._applyServerState();
     this._processEvents();
     this._updateProjectiles();
+    this._updateZombies();
     this._updateLocalFromServer();
   }
 
@@ -172,16 +174,25 @@ export class NetworkSyncSystem extends System {
     if (!this.hud) return;
     for (const evt of this._latestEvents) {
       if (evt.type === 'kill') {
-        // Find names
-        const killer = this._findPlayerName(evt.by);
+        const killer = evt.by === 'zombie' ? 'Zombie' : this._findPlayerName(evt.by);
         const victim = this._findPlayerName(evt.pid);
         if (evt.pid === this.localPlayerId) {
           this.hud.showDeath();
         } else {
           this.hud.showKill(killer, victim);
         }
+      } else if (evt.type === 'wave_start') {
+        this.hud.showWave(evt.wave);
+      } else if (evt.type === 'zombie_kill' && evt.by === this.localPlayerId) {
+        this.hud.addKill();
       }
     }
+
+    // Update wave info from state
+    if (this._latestState) {
+      this.hud.updateWave(this._latestState.wave || 0, this._latestState.waveActive || false);
+    }
+
     this._latestEvents = [];
   }
 
@@ -194,6 +205,12 @@ export class NetworkSyncSystem extends System {
   _updateProjectiles() {
     if (this.projectileSystem && this._latestState && this._latestState.projectiles) {
       this.projectileSystem.setProjectiles(this._latestState.projectiles);
+    }
+  }
+
+  _updateZombies() {
+    if (this.enemyRenderSystem && this._latestState && this._latestState.zombies) {
+      this.enemyRenderSystem.setZombies(this._latestState.zombies);
     }
   }
 

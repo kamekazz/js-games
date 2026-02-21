@@ -9,6 +9,7 @@ import { MovementSystem } from './systems/MovementSystem.js';
 import { CameraFollowSystem } from './systems/CameraFollowSystem.js';
 import { WeaponSystem } from './systems/WeaponSystem.js';
 import { ProjectileSystem } from './systems/ProjectileSystem.js';
+import { EnemyRenderSystem } from './systems/EnemyRenderSystem.js';
 import { NetworkSyncSystem } from './systems/NetworkSyncSystem.js';
 import { RenderSyncSystem } from './systems/RenderSyncSystem.js';
 import { createPlayer } from './entities/PlayerFactory.js';
@@ -32,7 +33,6 @@ export class Game {
 
   _setup() {
     this._createGround();
-    this._createCrosshair();
     this._registerSystems();
     this._spawnPlayer();
     this._createHUD();
@@ -48,20 +48,6 @@ export class Game {
     const obj = tileRenderer.getObject3D();
     this.engine.renderer.add(obj);
     this._sceneObjects.push(obj);
-  }
-
-  _createCrosshair() {
-    this._crosshair = document.createElement('div');
-    this._crosshair.id = 'crosshair';
-    document.body.appendChild(this._crosshair);
-
-    // Load crosshair CSS
-    if (!document.querySelector('link[href*="hud.css"]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = '/styles/hud.css';
-      document.head.appendChild(link);
-    }
   }
 
   _createHUD() {
@@ -81,6 +67,9 @@ export class Game {
     this._projectileSystem = new ProjectileSystem(renderer);
     this._networkSync.projectileSystem = this._projectileSystem;
 
+    this._enemyRenderSystem = new EnemyRenderSystem(renderer);
+    this._networkSync.enemyRenderSystem = this._enemyRenderSystem;
+
     this._weaponSystem = new WeaponSystem(input, this.networkClient);
 
     world.addSystem(new InputSystem(input));
@@ -90,6 +79,7 @@ export class Game {
     world.addSystem(new CameraFollowSystem(cameraController));
     world.addSystem(this._networkSync);
     world.addSystem(this._projectileSystem);
+    world.addSystem(this._enemyRenderSystem);
     world.addSystem(new RenderSyncSystem());
   }
 
@@ -148,11 +138,15 @@ export class Game {
     for (const btn of this._buttons) btn.destroy();
     this._buttons = [];
     if (this.hud) { this.hud.destroy(); this.hud = null; }
-    if (this._crosshair) { this._crosshair.remove(); this._crosshair = null; }
 
     // Clean up projectile meshes
     for (const [, mesh] of this._projectileSystem.meshes) {
       this.engine.renderer.remove(mesh);
+    }
+
+    // Clean up zombie meshes
+    for (const [, entry] of this._enemyRenderSystem.meshes) {
+      this.engine.renderer.remove(entry.group);
     }
 
     for (const obj of this._sceneObjects) {

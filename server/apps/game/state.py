@@ -5,6 +5,7 @@ This runs in the same process as Django Channels (Daphne/ASGI).
 import time
 import math
 import random
+from .zombies import ZombieState, WaveSpawner, ZOMBIE_TYPES
 
 PLAYER_SPEED = 12
 WORLD_SIZE = 100
@@ -94,7 +95,10 @@ class GameRoom:
         self.room_code = room_code
         self.players = {}       # player_id -> PlayerState
         self.projectiles = []   # list of ProjectileState
+        self.zombies = []       # list of ZombieState
+        self.wave_spawner = WaveSpawner(WORLD_SIZE)
         self.events = []        # events to broadcast this tick
+        self.kills = {}         # player_id -> kill count
         self.last_tick = time.time()
 
     def add_player(self, player_id, display_name='Player'):
@@ -162,6 +166,8 @@ class GameRoom:
         self.events = []
         half = WORLD_SIZE / 2
 
+        alive_players = [p for p in self.players.values() if p.alive]
+
         # Update players
         for player in self.players.values():
             if not player.alive:
@@ -193,7 +199,78 @@ class GameRoom:
                     player.reloading = False
                     player.ammo = player.mag_size
 
-        # Update projectiles
+        # --- Wave spawning ---
+        alive_zombie_count = sum(1 for z in self.zombies if z.alive)
+        spawns = self.wave_spawner.update(dt, alive_zombie_count, alive_players)
+        for ztype, zx, zy in spawns:
+            zombie = ZombieState(ztype, zx, zy)
+            self.zombies.append(zombie)
+
+        # Emit wave_start event
+        if spawns and self.wave_spawner.total_spawned == len(spawns):
+            self.events.append({
+                'type': 'wave_start',
+                'wave': self.wave_spawner.wave,
+            })
+
+        # --- Update zombies (AI: chase nearest player) ---
+        for zombie in self.zombies:
+            if not zombie.alive:
+                continue
+
+            # Find nearest alive player
+            nearest = None
+            nearest_dist = float('inf')
+            for player in alive_players:
+                dx = player.x - zombie.x
+                dy = player.y - zombie.y
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist < nearest_dist:
+                    nearest_dist = dist
+                    nearest = player
+
+            if nearest is None:
+                continue
+
+            # Move toward nearest player
+            dx = nearest.x - zombie.x
+            dy = nearest.y - zombie.y
+            dist = math.sqrt(dx * dx + dy * dy)
+
+            if dist > 0.1:
+                zombie.angle = math.atan2(dy, dx)
+                zombie.x += (dx / dist) * zombie.speed * dt
+                zombie.y += (dy / dist) * zombie.speed * dt
+                zombie.x = max(-half, min(half, zombie.x))
+                zombie.y = max(-half, min(half, zombie.y))
+
+            # Attack player on contact
+            if zombie.attack_timer > 0:
+                zombie.attack_timer -= dt
+
+            hit_radius = zombie.size + 0.6  # zombie size + player size
+            if dist < hit_radius and zombie.attack_timer <= 0:
+                nearest.health -= zombie.damage
+                zombie.attack_timer = zombie.attack_cooldown
+                self.events.append({
+                    'type': 'zombie_hit',
+                    'pid': nearest.player_id,
+                    'dmg': zombie.damage,
+                    'hp': nearest.health,
+                })
+                if nearest.health <= 0:
+                    nearest.health = 0
+                    nearest.alive = False
+                    nearest.respawn_timer = RESPAWN_TIME
+                    nearest.vx = 0
+                    nearest.vy = 0
+                    self.events.append({
+                        'type': 'kill',
+                        'pid': nearest.player_id,
+                        'by': 'zombie',
+                    })
+
+        # --- Update projectiles (hit zombies AND players) ---
         surviving = []
         for proj in self.projectiles:
             move = proj.speed * dt
@@ -206,40 +283,66 @@ class GameRoom:
             if abs(proj.x) > half or abs(proj.y) > half:
                 continue
 
-            # Check hit against players
             hit = False
-            for player in self.players.values():
-                if player.player_id == proj.owner_id or not player.alive:
+
+            # Check hit against zombies first
+            for zombie in self.zombies:
+                if not zombie.alive:
                     continue
-                dx = player.x - proj.x
-                dy = player.y - proj.y
-                if dx * dx + dy * dy < 1.0:  # hit radius ~1 unit
-                    player.health -= proj.damage
-                    self.events.append({
-                        'type': 'hit',
-                        'pid': player.player_id,
-                        'by': proj.owner_id,
-                        'dmg': proj.damage,
-                        'hp': player.health,
-                    })
-                    if player.health <= 0:
-                        player.health = 0
-                        player.alive = False
-                        player.respawn_timer = RESPAWN_TIME
-                        player.vx = 0
-                        player.vy = 0
+                dx = zombie.x - proj.x
+                dy = zombie.y - proj.y
+                if dx * dx + dy * dy < zombie.size * zombie.size + 0.5:
+                    zombie.health -= proj.damage
+                    if zombie.health <= 0:
+                        zombie.health = 0
+                        zombie.alive = False
+                        self.kills[proj.owner_id] = self.kills.get(proj.owner_id, 0) + 1
                         self.events.append({
-                            'type': 'kill',
-                            'pid': player.player_id,
+                            'type': 'zombie_kill',
+                            'zid': zombie.id,
                             'by': proj.owner_id,
+                            'xp': zombie.xp,
                         })
                     hit = True
                     break
+
+            # Check hit against players (PvP)
+            if not hit:
+                for player in self.players.values():
+                    if player.player_id == proj.owner_id or not player.alive:
+                        continue
+                    dx = player.x - proj.x
+                    dy = player.y - proj.y
+                    if dx * dx + dy * dy < 1.0:
+                        player.health -= proj.damage
+                        self.events.append({
+                            'type': 'hit',
+                            'pid': player.player_id,
+                            'by': proj.owner_id,
+                            'dmg': proj.damage,
+                            'hp': player.health,
+                        })
+                        if player.health <= 0:
+                            player.health = 0
+                            player.alive = False
+                            player.respawn_timer = RESPAWN_TIME
+                            player.vx = 0
+                            player.vy = 0
+                            self.events.append({
+                                'type': 'kill',
+                                'pid': player.player_id,
+                                'by': proj.owner_id,
+                            })
+                        hit = True
+                        break
 
             if not hit:
                 surviving.append(proj)
 
         self.projectiles = surviving
+
+        # Clean up dead zombies (keep briefly for death event, then purge)
+        self.zombies = [z for z in self.zombies if z.alive]
 
     def get_state(self):
         return {
@@ -252,6 +355,9 @@ class GameRoom:
                 }
                 for p in self.projectiles
             ],
+            'zombies': [z.to_dict() for z in self.zombies if z.alive],
+            'wave': self.wave_spawner.wave,
+            'waveActive': self.wave_spawner.wave_active,
             'events': self.events,
         }
 
