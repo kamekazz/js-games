@@ -30,14 +30,26 @@ export class NetworkSyncSystem extends System {
     this.sprintSystem = null;      // set by Game.js
     this.effectsSystem = null;     // set by Game.js
     this.audioManager = null;      // set by Game.js
+    this.interactionSystem = null; // set by Game.js
+    this.extractionZoneRenderSystem = null; // set by Game.js
+    this.chestRenderSystem = null; // set by Game.js
+    this.weaponHotbar = null;      // set by Game.js
+    this.onInteractionAvailableChanged = null; // callback set by Game.js
+    this._prevActionAvailable = false;
     this._obstaclesCreated = false;
     this._groundCreated = false;
+    this._extractionZonesCreated = false;
     this._sendInterval = 1000 / 20;
     this._lastSendTime = 0;
     this._serverTimeOffset = 0;
     this._remoteEntities = new Map();
     this._latestState = null;
     this._latestEvents = [];
+    // Idle direction arrow
+    this._idleTimer = 0;
+    this._idleArrow = null;
+    this._lastPlayerX = null;
+    this._lastPlayerY = null;
   }
 
   init(world) {
@@ -61,8 +73,11 @@ export class NetworkSyncSystem extends System {
     this._updateProjectiles();
     this._updateZombies();
     this._updateItems();
+    this._updateChests();
     this._updateScoreboard();
     this._updateLocalFromServer();
+    this._updateInteractionHint();
+    this._updateIdleArrow(dt);
   }
 
   _sendInput() {
@@ -107,6 +122,15 @@ export class NetworkSyncSystem extends System {
       if (this.movementSystem) {
         this.movementSystem.obstacles = state.obstacles;
       }
+      // Feed obstacles to interaction system
+      if (this.interactionSystem) {
+        this.interactionSystem.obstacles = state.obstacles;
+      }
+    }
+
+    // Update obstacle loot states (cars being looted)
+    if (this._obstaclesCreated && this.interactionSystem && state.obstacles) {
+      this.interactionSystem.obstacles = state.obstacles;
     }
 
     // Create ground patches once
@@ -115,6 +139,17 @@ export class NetworkSyncSystem extends System {
       this.obstacleRenderSystem.setGround(state.ground);
       if (this.sprintSystem) {
         this.sprintSystem.groundPatches = state.ground;
+      }
+    }
+
+    // Create extraction zone meshes once
+    if (!this._extractionZonesCreated && state.extractionZones && state.extractionZones.length > 0) {
+      this._extractionZonesCreated = true;
+      if (this.extractionZoneRenderSystem) {
+        this.extractionZoneRenderSystem.setZones(state.extractionZones);
+      }
+      if (this.interactionSystem) {
+        this.interactionSystem.extractionZones = state.extractionZones;
       }
     }
 
@@ -192,10 +227,18 @@ export class NetworkSyncSystem extends System {
         if (pd.weapon && pd.weapon !== weapon.id) {
           weapon.switchTo(pd.weapon);
           if (this.hud) this.hud.updateWeapon(pd.weapon);
+          if (this.weaponHotbar) this.weaponHotbar.setActiveWeapon(pd.weapon);
         }
         weapon.ammo = pd.ammo;
         weapon.maxAmmo = pd.maxAmmo;
         weapon.reloading = pd.reloading;
+
+        // Sync unlocked weapons
+        if (pd.unlockedWeapons) {
+          weapon.unlockedWeapons = new Set(pd.unlockedWeapons);
+          if (this.hud) this.hud.updateWeaponSlots(weapon.unlockedWeapons);
+          if (this.weaponHotbar) this.weaponHotbar.setUnlockedWeapons(weapon.unlockedWeapons);
+        }
 
         // Toggle mesh visibility
         const mesh = e.get(MeshRef).mesh;
@@ -217,7 +260,21 @@ export class NetworkSyncSystem extends System {
           this.hud.updateHealth(pd.hp, 100);
           this.hud.updateAmmo(pd.ammo, pd.maxAmmo, pd.reloading);
           this.hud.updateWeapon(weapon.id);
+          if (this.weaponHotbar) this.weaponHotbar.setActiveWeapon(weapon.id);
           if (sprint) this.hud.updateStamina(sprint.stamina, sprint.maxStamina);
+          if (pd.ammoReserve) this.hud.updateAmmoReserve(pd.ammoReserve, weapon.id);
+
+          // Action progress
+          if (pd.actionDuration > 0 && pd.actionProgress > 0) {
+            const labels = {
+              extraction_zone: 'Extracting...',
+              chest: 'Opening Chest...',
+              car: 'Searching Car...',
+            };
+            this.hud.updateAction(pd.actionProgress, pd.actionDuration, labels[pd.actionTargetType] || 'Action');
+          } else {
+            this.hud.hideAction();
+          }
         }
       }
       break;
@@ -262,8 +319,49 @@ export class NetworkSyncSystem extends System {
         this.hud.showWave(evt.wave);
         if (this.audioManager) this.audioManager.playWaveStart();
       } else if (evt.type === 'item_pickup' && evt.pid === this.localPlayerId) {
-        this.hud.showPickup(evt.item);
+        // Typed ammo pickup
+        if (evt.item === 'ammo' && evt.weapon) {
+          const names = { pistol: 'Pistol', rifle: 'Rifle', uzi: 'Uzi', shotgun: 'Shotgun' };
+          const wname = names[evt.weapon] || evt.weapon;
+          this.hud.showPickup(`+${evt.amount || 12} ${wname} Ammo`, '#ffaa22');
+        } else if (evt.item === 'health') {
+          this.hud.showPickup('+Health', '#44cc44');
+        } else {
+          this.hud.showPickup(`+${evt.item}`, '#ffaa22');
+        }
         if (this.audioManager) this.audioManager.playPickup();
+      } else if (evt.type === 'weapon_unlock') {
+        const names = { pistol: 'Pistol', rifle: 'Rifle', uzi: 'Uzi', shotgun: 'Shotgun' };
+        if (evt.pid === this.localPlayerId) {
+          this.hud.showWeaponUnlock(names[evt.weapon] || evt.weapon);
+        } else {
+          const pname = this._findPlayerName(evt.pid);
+          this.hud.showPickup(`${pname} unlocked ${names[evt.weapon] || evt.weapon}!`, '#ffcc44');
+        }
+      } else if (evt.type === 'ammo_pickup' && evt.pid === this.localPlayerId) {
+        const names = { pistol: 'Pistol', rifle: 'Rifle', uzi: 'Uzi', shotgun: 'Shotgun' };
+        this.hud.showPickup(`+${evt.amount} ${names[evt.weapon] || evt.weapon} Ammo`, '#ffaa22');
+      } else if (evt.type === 'health_pickup' && evt.pid === this.localPlayerId) {
+        this.hud.showPickup(`+${evt.amount} Health`, '#44cc44');
+      } else if (evt.type === 'score_pickup' && evt.pid === this.localPlayerId) {
+        this.hud.showPickup(`+${evt.amount} Score`, '#ffcc44');
+      } else if (evt.type === 'chest_opened') {
+        if (evt.pid === this.localPlayerId) {
+          if (this.audioManager) this.audioManager.playPickup();
+        }
+      } else if (evt.type === 'car_looted') {
+        if (this.obstacleRenderSystem && evt.obsId) {
+          this.obstacleRenderSystem.markCarLooted(evt.obsId);
+        }
+        if (evt.pid === this.localPlayerId) {
+          if (this.audioManager) this.audioManager.playPickup();
+        }
+      } else if (evt.type === 'extracted') {
+        if (evt.pid === this.localPlayerId) {
+          this.hud.showExtracted(true);
+        } else {
+          this.hud.showExtractionKillFeed(evt.name || this._findPlayerName(evt.pid));
+        }
       } else if (evt.type === 'game_over') {
         if (this.onGameOver) this.onGameOver(evt);
       }
@@ -280,6 +378,124 @@ export class NetworkSyncSystem extends System {
     }
 
     this._latestEvents = [];
+  }
+
+  _updateInteractionHint() {
+    if (!this.interactionSystem) return;
+    const available = this.interactionSystem.actionAvailable;
+    const label = this.interactionSystem.actionLabel;
+
+    if (this.hud) {
+      if (available) this.hud.showActionHint(label);
+      else this.hud.hideActionHint();
+    }
+
+    // Fire callback only on state change
+    if (available !== this._prevActionAvailable) {
+      this._prevActionAvailable = available;
+      if (this.onInteractionAvailableChanged) {
+        this.onInteractionAvailableChanged(available, label);
+      }
+    }
+  }
+
+  _updateIdleArrow(dt) {
+    if (!this._latestState) return;
+
+    // Find local player data
+    const pd = this._latestState.players.find(p => p.id === this.localPlayerId);
+    if (!pd || !pd.alive) {
+      this._idleTimer = 0;
+      if (this._idleArrow) this._idleArrow.visible = false;
+      return;
+    }
+
+    // Detect movement
+    const moved = this._lastPlayerX !== null &&
+      (Math.abs(pd.x - this._lastPlayerX) > 0.05 || Math.abs(pd.y - this._lastPlayerY) > 0.05);
+    this._lastPlayerX = pd.x;
+    this._lastPlayerY = pd.y;
+
+    if (moved || pd.stamina < 100) {
+      this._idleTimer = 0;
+      if (this._idleArrow) this._idleArrow.visible = false;
+      return;
+    }
+
+    this._idleTimer += dt;
+
+    if (this._idleTimer < 10) {
+      if (this._idleArrow) this._idleArrow.visible = false;
+      return;
+    }
+
+    // Find nearest zombie
+    const zombies = this._latestState.zombies || [];
+    if (zombies.length === 0) {
+      if (this._idleArrow) this._idleArrow.visible = false;
+      return;
+    }
+
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const z of zombies) {
+      const dx = z.x - pd.x;
+      const dy = z.y - pd.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < nearestDist) {
+        nearestDist = d2;
+        nearest = z;
+      }
+    }
+
+    if (!nearest) {
+      if (this._idleArrow) this._idleArrow.visible = false;
+      return;
+    }
+
+    // Create arrow if needed
+    if (!this._idleArrow) {
+      this._idleArrow = this._createIdleArrow();
+      this.renderer.add(this._idleArrow);
+    }
+
+    // Position arrow near player feet, pointing toward nearest enemy
+    const angle = Math.atan2(nearest.y - pd.y, nearest.x - pd.x);
+    this._idleArrow.position.set(
+      pd.x + Math.cos(angle) * 2,
+      0.15,
+      -(pd.y + Math.sin(angle) * 2)
+    );
+    this._idleArrow.rotation.y = -angle + Math.PI / 2;
+    this._idleArrow.visible = true;
+
+    // Pulse opacity
+    const pulse = 0.5 + Math.sin(this._idleTimer * 3) * 0.3;
+    this._idleArrow.children[0].material.opacity = pulse;
+  }
+
+  _createIdleArrow() {
+    const group = new THREE.Group();
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.6);
+    shape.lineTo(-0.4, -0.3);
+    shape.lineTo(0, 0);
+    shape.lineTo(0.4, -0.3);
+    shape.closePath();
+
+    const geo = new THREE.ShapeGeometry(shape);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xff4444,
+      emissive: 0xff4444,
+      emissiveIntensity: 0.5,
+      transparent: true,
+      opacity: 0.6,
+      side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI / 2;
+    group.add(mesh);
+    return group;
   }
 
   _findPlayerName(pid) {
@@ -315,6 +531,16 @@ export class NetworkSyncSystem extends System {
   _updateItems() {
     if (this.itemRenderSystem && this._latestState && this._latestState.items) {
       this.itemRenderSystem.setItems(this._latestState.items);
+    }
+  }
+
+  _updateChests() {
+    if (this.chestRenderSystem && this._latestState && this._latestState.chests) {
+      this.chestRenderSystem.setChests(this._latestState.chests);
+      // Feed chests to interaction system for proximity hints
+      if (this.interactionSystem) {
+        this.interactionSystem.chests = this._latestState.chests;
+      }
     }
   }
 

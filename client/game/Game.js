@@ -3,6 +3,7 @@ import { TileRenderer } from '@engine/rendering/TileRenderer.js';
 import { AudioManager } from '@engine/audio/AudioManager.js';
 import { VirtualJoystick } from '@ui/VirtualJoystick.js';
 import { ActionButton } from '@ui/ActionButton.js';
+import { WeaponHotbar } from '@ui/WeaponHotbar.js';
 import { HUD } from '@ui/HUD.js';
 import { PauseMenu } from '@ui/PauseMenu.js';
 import { InputSystem } from './systems/InputSystem.js';
@@ -19,6 +20,9 @@ import { ItemRenderSystem } from './systems/ItemRenderSystem.js';
 import { EffectsSystem } from './systems/EffectsSystem.js';
 import { NetworkSyncSystem } from './systems/NetworkSyncSystem.js';
 import { RenderSyncSystem } from './systems/RenderSyncSystem.js';
+import { InteractionSystem } from './systems/InteractionSystem.js';
+import { ExtractionZoneRenderSystem } from './systems/ExtractionZoneRenderSystem.js';
+import { ChestRenderSystem } from './systems/ChestRenderSystem.js';
 import { Scoreboard } from '@ui/Scoreboard.js';
 import { createPlayer } from './entities/PlayerFactory.js';
 import { MeshRef } from './components/MeshRef.js';
@@ -100,6 +104,18 @@ export class Game {
     this._networkSync.effectsSystem = this._effectsSystem;
     this._networkSync.audioManager = this._audio;
 
+    // Interaction system (F key / mobile action)
+    this._interactionSystem = new InteractionSystem(input, this.networkClient);
+    this._networkSync.interactionSystem = this._interactionSystem;
+
+    // Extraction zone renderer
+    this._extractionZoneRenderSystem = new ExtractionZoneRenderSystem(renderer);
+    this._networkSync.extractionZoneRenderSystem = this._extractionZoneRenderSystem;
+
+    // Chest renderer
+    this._chestRenderSystem = new ChestRenderSystem(renderer);
+    this._networkSync.chestRenderSystem = this._chestRenderSystem;
+
     this._networkSync.onGameOver = (data) => {
       if (this.onGameOver) this.onGameOver(data);
     };
@@ -115,6 +131,7 @@ export class Game {
     this._movementSystem = new MovementSystem();
     this._networkSync.movementSystem = this._movementSystem;
     world.addSystem(this._movementSystem);
+    world.addSystem(this._interactionSystem);
     world.addSystem(this._weaponSystem);
     world.addSystem(this._laserSightSystem);
     world.addSystem(new CameraFollowSystem(cameraController));
@@ -123,6 +140,8 @@ export class Game {
     world.addSystem(this._obstacleRenderSystem);
     world.addSystem(this._enemyRenderSystem);
     world.addSystem(this._itemRenderSystem);
+    world.addSystem(this._extractionZoneRenderSystem);
+    world.addSystem(this._chestRenderSystem);
     world.addSystem(this._effectsSystem);
     world.addSystem(new RenderSyncSystem());
   }
@@ -155,25 +174,76 @@ export class Game {
   }
 
   _setupActionButtons() {
-    const container = document.getElementById('action-buttons');
-    if (!container) return;
+    const overlay = document.getElementById('ui-overlay');
+    if (!overlay) return;
 
-    const reloadBtn = new ActionButton(container, {
+    // Reload — upper-left of right joystick
+    const reloadBtn = new ActionButton(overlay, {
       label: 'R',
       size: 50,
       color: 'rgba(68,136,255,0.5)',
       onPress: () => this._weaponSystem.requestReload(),
     });
+    reloadBtn.el.style.position = 'absolute';
+    reloadBtn.el.style.right = '160px';
+    reloadBtn.el.style.bottom = '155px';
+    reloadBtn.el.style.margin = '0';
     this._buttons.push(reloadBtn);
 
-    const sprintBtn = new ActionButton(container, {
+    // Sprint — lower-left of right joystick
+    const sprintBtn = new ActionButton(overlay, {
       label: 'Sprint',
       size: 50,
       color: 'rgba(68,200,255,0.5)',
       onPress: () => this._sprintSystem.setSprinting(true),
       onRelease: () => this._sprintSystem.setSprinting(false),
     });
+    sprintBtn.el.style.position = 'absolute';
+    sprintBtn.el.style.right = '160px';
+    sprintBtn.el.style.bottom = '40px';
+    sprintBtn.el.style.margin = '0';
     this._buttons.push(sprintBtn);
+
+    // Contextual interact (F) button — hidden by default, shown when near interactable
+    const actionBtn = new ActionButton(overlay, {
+      label: 'F',
+      size: 50,
+      color: 'rgba(255,200,68,0.5)',
+      onPress: () => this._interactionSystem.setActionHeld(true),
+      onRelease: () => this._interactionSystem.setActionHeld(false),
+    });
+    actionBtn.el.style.position = 'absolute';
+    actionBtn.el.style.right = '185px';
+    actionBtn.el.style.bottom = '85px';
+    actionBtn.el.style.margin = '0';
+    actionBtn.el.style.display = 'none';
+    // Pill shape for action text
+    actionBtn.el.style.borderRadius = '25px';
+    actionBtn.el.style.width = 'auto';
+    actionBtn.el.style.minWidth = '50px';
+    actionBtn.el.style.padding = '0 14px';
+    actionBtn.el.style.fontSize = '13px';
+    actionBtn.el.style.whiteSpace = 'nowrap';
+    this._actionBtn = actionBtn;
+    this._buttons.push(actionBtn);
+
+    // Wire contextual visibility callback
+    this._networkSync.onInteractionAvailableChanged = (available, label) => {
+      if (available) {
+        // Strip the "[F] " prefix for mobile display
+        const cleanLabel = label.replace(/^\[F\]\s*/, '');
+        this._actionBtn.el.textContent = cleanLabel;
+        this._actionBtn.el.style.display = 'flex';
+      } else {
+        this._actionBtn.el.style.display = 'none';
+      }
+    };
+
+    // Weapon hotbar
+    this._weaponHotbar = new WeaponHotbar(overlay, (weaponId) => {
+      this._weaponSystem._switchRequested = weaponId;
+    });
+    this._networkSync.weaponHotbar = this._weaponHotbar;
   }
 
   destroy() {
@@ -181,6 +251,7 @@ export class Game {
     this._joysticks = [];
     for (const btn of this._buttons) btn.destroy();
     this._buttons = [];
+    if (this._weaponHotbar) { this._weaponHotbar.destroy(); this._weaponHotbar = null; }
     if (this.hud) { this.hud.destroy(); this.hud = null; }
     if (this._scoreboard) { this._scoreboard.destroy(); this._scoreboard = null; }
     if (this._pauseMenu) { this._pauseMenu.destroy(); this._pauseMenu = null; }
@@ -200,6 +271,11 @@ export class Game {
       this.engine.renderer.remove(mesh);
     }
 
+    // Clean up obstacle loot indicators
+    for (const [, indicator] of this._obstacleRenderSystem._lootIndicators) {
+      this.engine.renderer.remove(indicator);
+    }
+
     // Clean up zombie meshes
     for (const [, entry] of this._enemyRenderSystem.meshes) {
       this.engine.renderer.remove(entry.group);
@@ -210,11 +286,29 @@ export class Game {
       this.engine.renderer.remove(mesh);
     }
 
+    // Clean up extraction zone meshes
+    for (const [, group] of this._extractionZoneRenderSystem.meshes) {
+      this.engine.renderer.remove(group);
+    }
+
+    // Clean up chest meshes
+    for (const [, group] of this._chestRenderSystem.meshes) {
+      this.engine.renderer.remove(group);
+    }
+
     // Clean up laser sight
     this._laserSightSystem.destroy();
 
     // Clean up effects
     this._effectsSystem.destroy();
+
+    // Clean up idle arrow
+    if (this._networkSync._idleArrow) {
+      this.engine.renderer.remove(this._networkSync._idleArrow);
+    }
+
+    // Clean up interaction system
+    this._interactionSystem.destroy();
 
     // Clean up audio
     this._audio.destroy();

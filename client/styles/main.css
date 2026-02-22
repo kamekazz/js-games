@@ -69,7 +69,8 @@ html, body {
 @media (min-width: 1024px) and (pointer: fine) {
   #joystick-zone-left,
   #joystick-zone-right,
-  #action-buttons {
+  #action-buttons,
+  #weapon-hotbar {
     display: none;
   }
 }
