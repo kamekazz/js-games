@@ -79,7 +79,8 @@ export class WeaponSystem extends System {
       }
 
       // Shoot — send current angle and aim time so server calculates accuracy
-      if (wantShoot && weapon.cooldown <= 0 && !weapon.reloading && weapon.ammo > 0) {
+      // Can't shoot while sprinting
+      if (wantShoot && weapon.cooldown <= 0 && !weapon.reloading && weapon.ammo > 0 && !sprint.isSprinting) {
         const angle = entity.get(Rotation).angle;
         this.networkClient.send({ type: 'player_shoot', angle, aimTime: weapon.aimTime });
         weapon.cooldown = weapon.fireRate;

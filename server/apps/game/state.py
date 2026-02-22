@@ -542,6 +542,10 @@ class GameRoom:
         if player.reloading or player.fire_cooldown > 0:
             return
 
+        # Can't shoot while sprinting
+        if player.sprinting:
+            return
+
         if player.ammo <= 0:
             return
 

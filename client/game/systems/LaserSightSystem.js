@@ -4,6 +4,7 @@ import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Position } from '../components/Position.js';
 import { Rotation } from '../components/Rotation.js';
 import { Weapon } from '../components/Weapon.js';
+import { Sprint } from '../components/Sprint.js';
 import { WEAPONS } from '@shared/constants.js';
 
 export class LaserSightSystem extends System {
@@ -34,7 +35,11 @@ export class LaserSightSystem extends System {
       return;
     }
 
-    if (input.shooting) {
+    // Suppress laser while sprinting (can't shoot while sprinting)
+    const sprint = localEntity.get(Sprint);
+    const isSprinting = sprint && sprint.isSprinting;
+
+    if (input.shooting && !isSprinting) {
       const weapon = localEntity.get(Weapon);
       const wDef = WEAPONS[weapon.id];
       const laserLength = wDef.laserLength;
