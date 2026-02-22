@@ -5,10 +5,13 @@ export class Sprint extends Component {
     super();
     this.stamina = 100;
     this.maxStamina = 100;
-    this.drainRate = 30;    // stamina/sec while sprinting
-    this.regenRate = 20;    // stamina/sec while not sprinting
-    this.regenDelay = 0.5;  // seconds after stopping sprint before regen starts
+    this.sprintDrain = 25;    // stamina/sec while sprinting
+    this.walkDrain = 3;       // stamina/sec while walking (not sprinting)
+    this.regenRate = 25;      // stamina/sec while standing still
+    this.regenDelay = 0.3;    // seconds before regen starts
     this.speedMultiplier = 1.7;
+    this.exhaustionThreshold = 30;  // below this, speed drops
+    this.exhaustionMinMult = 0.45;  // speed multiplier at 0 stamina
     this.isSprinting = false;
     this._regenTimer = 0;
   }

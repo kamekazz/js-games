@@ -107,6 +107,7 @@ export class Game {
     this._weaponSystem = new WeaponSystem(input, this.networkClient, this._audio);
     this._laserSightSystem = new LaserSightSystem(renderer, input);
     this._sprintSystem = new SprintSystem(input);
+    this._networkSync.sprintSystem = this._sprintSystem;
 
     world.addSystem(new InputSystem(input));
     world.addSystem(new AimSystem(input));

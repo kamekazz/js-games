@@ -27,6 +27,7 @@ export class NetworkSyncSystem extends System {
     this.onGameOver = null;        // callback set by Game.js
     this.obstacleRenderSystem = null; // set by Game.js
     this.movementSystem = null;    // set by Game.js
+    this.sprintSystem = null;      // set by Game.js
     this.effectsSystem = null;     // set by Game.js
     this.audioManager = null;      // set by Game.js
     this._obstaclesCreated = false;
@@ -112,6 +113,9 @@ export class NetworkSyncSystem extends System {
     if (!this._groundCreated && this.obstacleRenderSystem && state.ground && state.ground.length > 0) {
       this._groundCreated = true;
       this.obstacleRenderSystem.setGround(state.ground);
+      if (this.sprintSystem) {
+        this.sprintSystem.groundPatches = state.ground;
+      }
     }
 
     const seen = new Set();
@@ -197,12 +201,22 @@ export class NetworkSyncSystem extends System {
         const mesh = e.get(MeshRef).mesh;
         mesh.visible = pd.alive;
 
+        // Reconcile stamina with server
+        const sprint = e.get(Sprint);
+        if (sprint && pd.stamina != null) {
+          const staminaDiff = pd.stamina - sprint.stamina;
+          if (Math.abs(staminaDiff) > 10) {
+            sprint.stamina = pd.stamina;
+          } else if (Math.abs(staminaDiff) > 1) {
+            sprint.stamina += staminaDiff * 0.3;
+          }
+        }
+
         // Update HUD
         if (this.hud) {
           this.hud.updateHealth(pd.hp, 100);
           this.hud.updateAmmo(pd.ammo, pd.maxAmmo, pd.reloading);
           this.hud.updateWeapon(weapon.id);
-          const sprint = e.get(Sprint);
           if (sprint) this.hud.updateStamina(sprint.stamina, sprint.maxStamina);
         }
       }

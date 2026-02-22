@@ -97,6 +97,23 @@ SPAWN_CLEAR_RADIUS = 15  # keep center clear for player spawns
 PLAYER_MAX_HEALTH = 100
 RESPAWN_TIME = 3.0
 
+# Stamina
+MAX_STAMINA = 100
+STAMINA_WALK_DRAIN = 3        # per second while walking (not sprinting)
+STAMINA_SPRINT_DRAIN = 25     # per second while sprinting
+STAMINA_REGEN = 25            # per second while standing still
+STAMINA_REGEN_DELAY = 0.3     # seconds before regen starts
+EXHAUSTION_THRESHOLD = 30     # below this, speed drops
+EXHAUSTION_MIN_MULT = 0.45    # speed multiplier at 0 stamina
+
+# Surface speed multipliers (default = grass)
+SURFACE_SPEED = {
+    'road': 1.0,
+    'sidewalk': 1.0,
+    'mud': 0.7,
+}
+GRASS_SPEED = 0.8  # default when not on any patch
+
 # Item drop definitions
 ITEM_TYPES = {
     'health': {'heal': 30, 'color': 'green'},
@@ -262,6 +279,7 @@ class PlayerState:
         'weapon_id', 'ammo', 'mag_size', 'fire_cooldown', 'reload_timer', 'reloading',
         'score', 'zombie_kills', 'deaths', 'shots_fired', 'shots_hit',
         'sprinting', '_last_shot_time',
+        'stamina', '_stamina_regen_timer',
     )
 
     def __init__(self, player_id, display_name='Player'):
@@ -290,8 +308,10 @@ class PlayerState:
         self.deaths = 0
         self.shots_fired = 0
         self.shots_hit = 0
-        # Sprint
+        # Sprint & stamina
         self.sprinting = False
+        self.stamina = MAX_STAMINA
+        self._stamina_regen_timer = 0.0
         # Anti-cheat
         self._last_shot_time = 0.0
 
@@ -310,6 +330,7 @@ class PlayerState:
             'reloading': self.reloading,
             'score': self.score,
             'kills': self.zombie_kills,
+            'stamina': round(self.stamina, 1),
         }
 
 
@@ -602,6 +623,23 @@ class GameRoom:
                 return obs
         return None
 
+    def _get_surface_multiplier(self, px, py):
+        """Return speed multiplier based on ground surface at position."""
+        best = GRASS_SPEED  # default: grass
+        for gp in self.ground_patches:
+            # Transform point into patch local space
+            dx = px - gp.x
+            dy = py - gp.y
+            cos_a = math.cos(-gp.angle)
+            sin_a = math.sin(-gp.angle)
+            lx = dx * cos_a - dy * sin_a
+            ly = dx * sin_a + dy * cos_a
+            if abs(lx) < gp.w / 2 and abs(ly) < gp.d / 2:
+                mult = SURFACE_SPEED.get(gp.patch_type, GRASS_SPEED)
+                if mult > best:
+                    best = mult
+        return best
+
     def tick(self, dt):
         self.events = []
         half = WORLD_SIZE / 2
@@ -648,6 +686,7 @@ class GameRoom:
                 if player.respawn_timer <= 0:
                     player.alive = True
                     player.health = PLAYER_MAX_HEALTH
+                    player.stamina = MAX_STAMINA
                     player.x = random.uniform(-10, 10)
                     player.y = random.uniform(-10, 10)
                     weapon = WEAPONS[player.weapon_id]
@@ -656,8 +695,37 @@ class GameRoom:
                     self.events.append({'type': 'respawn', 'pid': player.player_id})
                 continue
 
+            # --- Stamina ---
+            is_moving = player.vx != 0 or player.vy != 0
+            if is_moving:
+                if player.sprinting and player.stamina > 0:
+                    player.stamina -= STAMINA_SPRINT_DRAIN * dt
+                else:
+                    player.stamina -= STAMINA_WALK_DRAIN * dt
+                    player.sprinting = False  # can't sprint with no stamina
+                player.stamina = max(0, player.stamina)
+                player._stamina_regen_timer = STAMINA_REGEN_DELAY
+            else:
+                # Regen when standing still
+                if player._stamina_regen_timer > 0:
+                    player._stamina_regen_timer -= dt
+                else:
+                    player.stamina = min(MAX_STAMINA, player.stamina + STAMINA_REGEN * dt)
+
+            # Exhaustion penalty
+            if player.stamina > EXHAUSTION_THRESHOLD:
+                exhaustion_mult = 1.0
+            else:
+                exhaustion_mult = EXHAUSTION_MIN_MULT + (player.stamina / EXHAUSTION_THRESHOLD) * (1.0 - EXHAUSTION_MIN_MULT)
+
+            # Surface speed
+            surface_mult = self._get_surface_multiplier(player.x, player.y)
+
+            # Sprint multiplier
+            sprint_mult = PLAYER_SPRINT_MULTIPLIER if player.sprinting and player.stamina > 0 else 1.0
+
             # Movement
-            speed = PLAYER_SPEED * (PLAYER_SPRINT_MULTIPLIER if player.sprinting else 1.0)
+            speed = PLAYER_SPEED * sprint_mult * exhaustion_mult * surface_mult
             player.x += player.vx * speed * dt
             player.y += player.vy * speed * dt
             player.x = max(-half, min(half, player.x))
