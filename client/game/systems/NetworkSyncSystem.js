@@ -198,7 +198,10 @@ export class NetworkSyncSystem extends System {
         if (this.effectsSystem) this.effectsSystem.spawnMuzzleFlash(evt.x, evt.y, evt.angle);
       } else if (evt.type === 'proj_hit') {
         if (this.audioManager) this.audioManager.playZombieHit();
-        if (this.effectsSystem) this.effectsSystem.spawnHitSparks(evt.x, evt.y);
+        if (this.effectsSystem) {
+          this.effectsSystem.spawnHitSparks(evt.x, evt.y);
+          if (evt.dmg) this.effectsSystem.spawnDamageNumber(evt.x, evt.y, evt.dmg);
+        }
       } else if (evt.type === 'hit' || evt.type === 'zombie_hit') {
         if (evt.type === 'zombie_hit' && evt.pid === this.localPlayerId) {
           if (this.audioManager) this.audioManager.playPlayerHit();

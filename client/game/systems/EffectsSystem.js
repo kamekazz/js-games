@@ -164,6 +164,50 @@ export class EffectsSystem extends System {
     });
   }
 
+  /**
+   * Floating damage number above hit position (RPG-style)
+   */
+  spawnDamageNumber(x, y, damage) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+
+    const text = String(damage);
+    ctx.font = 'bold 48px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // Black outline
+    ctx.strokeStyle = 'black';
+    ctx.lineWidth = 5;
+    ctx.strokeText(text, 64, 32);
+    // Color based on damage amount
+    if (damage >= 30) ctx.fillStyle = '#ff4444';
+    else if (damage >= 15) ctx.fillStyle = '#ffaa22';
+    else ctx.fillStyle = '#ffff44';
+    ctx.fillText(text, 64, 32);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const mat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(x + (Math.random() - 0.5) * 0.5, 2.0, -y);
+    sprite.scale.set(2, 1, 1);
+    sprite.renderOrder = 1000;
+    this.renderer.add(sprite);
+
+    this._effects.push({
+      meshes: [sprite],
+      life: 0.8,
+      maxLife: 0.8,
+      update: (eff, t, dt) => {
+        sprite.position.y += 2.5 * dt;
+        mat.opacity = Math.min(t * 2, 1);
+        const scale = 0.8 + 0.4 * (1 - t);
+        sprite.scale.set(2 * scale, scale, 1);
+      },
+    });
+  }
+
   update(dt) {
     const surviving = [];
 

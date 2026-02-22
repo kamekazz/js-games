@@ -25,7 +25,7 @@ WEAPONS = {
     'pistol': {
         'damage': 20,
         'fire_rate': 0.3,
-        'magazine': 12,
+        'magazine': 8,
         'reload_time': 1.5,
         'projectile_speed': 40,
         'range': 30,
@@ -38,11 +38,11 @@ WEAPONS = {
     'rifle': {
         'damage': 35,
         'fire_rate': 0.8,
-        'magazine': 8,
+        'magazine': 18,
         'reload_time': 2.5,
         'projectile_speed': 60,
         'range': 80,
-        'pellets': 1,
+        'pellets': 2,
         'spread_angle': 0,
         'falloff': False,
         'falloff_start': 0,
@@ -263,14 +263,25 @@ class GameRoom:
         pellets = weapon.get('pellets', 1)
         spread = weapon.get('spread_angle', 0)
 
-        if pellets > 1 and spread > 0:
-            # Multi-pellet weapon (shotgun): spread pellets across the angle
-            half_spread = spread / 2
-            for i in range(pellets):
-                offset = -half_spread + spread * (i / (pellets - 1))
-                pellet_angle = player.angle + offset
-                proj = ProjectileState(player_id, player.x, player.y, pellet_angle, weapon, player.weapon_id)
-                self.projectiles.append(proj)
+        if pellets > 1:
+            if spread > 0:
+                # Spread pellets across the angle (shotgun)
+                half_spread = spread / 2
+                for i in range(pellets):
+                    offset = -half_spread + spread * (i / (pellets - 1))
+                    pellet_angle = player.angle + offset
+                    proj = ProjectileState(player_id, player.x, player.y, pellet_angle, weapon, player.weapon_id)
+                    self.projectiles.append(proj)
+            else:
+                # Multiple pellets, same direction staggered behind each other (rifle)
+                dx = math.cos(player.angle)
+                dy = math.sin(player.angle)
+                spacing = 1.2  # distance between bullets
+                for i in range(pellets):
+                    ox = player.x - dx * spacing * i
+                    oy = player.y - dy * spacing * i
+                    proj = ProjectileState(player_id, ox, oy, player.angle, weapon, player.weapon_id)
+                    self.projectiles.append(proj)
         else:
             proj = ProjectileState(player_id, player.x, player.y, player.angle, weapon, player.weapon_id)
             self.projectiles.append(proj)
@@ -478,7 +489,8 @@ class GameRoom:
                 dx = zombie.x - proj.x
                 dy = zombie.y - proj.y
                 if dx * dx + dy * dy < zombie.size * zombie.size + 0.5:
-                    zombie.health -= self._calc_damage(proj)
+                    dmg = self._calc_damage(proj)
+                    zombie.health -= dmg
                     # Track accuracy
                     shooter = self.players.get(proj.owner_id)
                     if shooter:
@@ -487,6 +499,7 @@ class GameRoom:
                         'type': 'proj_hit',
                         'x': round(zombie.x, 2),
                         'y': round(zombie.y, 2),
+                        'dmg': dmg,
                     })
                     if zombie.health <= 0:
                         zombie.health = 0
