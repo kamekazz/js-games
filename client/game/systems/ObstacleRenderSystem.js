@@ -93,7 +93,9 @@ export class ObstacleRenderSystem extends System {
 
     for (const patch of patches) {
       const mesh = this._createGroundPatch(patch);
-      mesh.position.set(patch.x, 0.01, -patch.y);
+      // Different Y heights to prevent z-fighting between overlapping patches
+      const yOffset = patch.type === 'road' ? 0.02 : 0.005;
+      mesh.position.set(patch.x, yOffset, -patch.y);
       mesh.rotation.y = patch.angle || 0;
       this.renderer.add(mesh);
       this.groundMeshes.push(mesh);

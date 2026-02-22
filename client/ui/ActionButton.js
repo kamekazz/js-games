@@ -19,10 +19,12 @@ export class ActionButton {
       user-select: none;
       cursor: pointer;
       margin-bottom: 10px;
+      pointer-events: auto;
     `;
 
     this.el.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      this.el.setPointerCapture(e.pointerId);
       if (onPress) onPress();
     });
 
@@ -31,7 +33,11 @@ export class ActionButton {
       if (onRelease) onRelease();
     });
 
-    this.el.addEventListener('pointerleave', (e) => {
+    this.el.addEventListener('pointercancel', (e) => {
+      if (onRelease) onRelease();
+    });
+
+    this.el.addEventListener('lostpointercapture', (e) => {
       if (onRelease) onRelease();
     });
 

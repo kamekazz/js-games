@@ -10,6 +10,7 @@ import { Velocity } from '../components/Velocity.js';
 import { Health } from '../components/Health.js';
 import { Weapon } from '../components/Weapon.js';
 import { Sprint } from '../components/Sprint.js';
+import { isTouchDevice } from '@engine/input/DeviceDetector.js';
 
 export class NetworkSyncSystem extends System {
   constructor(networkClient, stateBuffer, renderer, inputManager) {
@@ -18,6 +19,7 @@ export class NetworkSyncSystem extends System {
     this.stateBuffer = stateBuffer;
     this.renderer = renderer;
     this.inputManager = inputManager;
+    this._isTouch = isTouchDevice();
     this.localPlayerId = null;
     this.projectileSystem = null;  // set by Game.js
     this.enemyRenderSystem = null; // set by Game.js
@@ -385,7 +387,7 @@ export class NetworkSyncSystem extends System {
     const available = this.interactionSystem.actionAvailable;
     const label = this.interactionSystem.actionLabel;
 
-    if (this.hud) {
+    if (this.hud && !this._isTouch) {
       if (available) this.hud.showActionHint(label);
       else this.hud.hideActionHint();
     }
@@ -412,11 +414,11 @@ export class NetworkSyncSystem extends System {
 
     // Detect movement
     const moved = this._lastPlayerX !== null &&
-      (Math.abs(pd.x - this._lastPlayerX) > 0.05 || Math.abs(pd.y - this._lastPlayerY) > 0.05);
+      (Math.abs(pd.x - this._lastPlayerX) > 0.15 || Math.abs(pd.y - this._lastPlayerY) > 0.15);
     this._lastPlayerX = pd.x;
     this._lastPlayerY = pd.y;
 
-    if (moved || pd.stamina < 100) {
+    if (moved || pd.stamina < 95) {
       this._idleTimer = 0;
       if (this._idleArrow) this._idleArrow.visible = false;
       return;
@@ -424,7 +426,7 @@ export class NetworkSyncSystem extends System {
 
     this._idleTimer += dt;
 
-    if (this._idleTimer < 10) {
+    if (this._idleTimer < 5) {
       if (this._idleArrow) this._idleArrow.visible = false;
       return;
     }

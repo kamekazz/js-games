@@ -44,6 +44,7 @@ export class WeaponHotbar {
         user-select: none;
         cursor: pointer;
         padding: 0;
+        pointer-events: auto;
       `;
       btn.addEventListener('pointerdown', (e) => {
         e.preventDefault();

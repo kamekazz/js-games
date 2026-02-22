@@ -58,8 +58,10 @@ export class HUD {
     this._actionContainer = this.el.querySelector('#hud-action-container');
     this._actionBar = this.el.querySelector('#hud-action-bar');
     this._actionLabel = this.el.querySelector('#hud-action-label');
-    if (isTouchDevice()) {
+    this._isTouch = isTouchDevice();
+    if (this._isTouch) {
       this._weaponHints.style.display = 'none';
+      this._reloadHint.style.display = 'none';
     }
     this._killCount = 0;
     this._killTimeout = null;
@@ -130,7 +132,7 @@ export class HUD {
       this._reloadHint.style.display = 'none';
     } else {
       this._ammo.textContent = `${current} / ${max}`;
-      this._reloadHint.style.display = current < max ? 'block' : 'none';
+      this._reloadHint.style.display = (!this._isTouch && current < max) ? 'block' : 'none';
     }
   }
 

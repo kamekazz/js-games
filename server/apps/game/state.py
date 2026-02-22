@@ -630,142 +630,170 @@ class GameRoom:
     def _generate_obstacles(self):
         half = WORLD_SIZE / 2
 
-        # --- 1. Generate cluster centers ---
-        cluster_centers = []
-        for _ in range(200):
-            if len(cluster_centers) >= 7:
-                break
-            cx = random.uniform(-half + 20, half - 20)
-            cy = random.uniform(-half + 20, half - 20)
-            # Avoid spawn zone
-            if abs(cx) < SPAWN_CLEAR_RADIUS and abs(cy) < SPAWN_CLEAR_RADIUS:
-                continue
-            # Min distance from other clusters
-            too_close = False
-            for ox, oy, _ in cluster_centers:
-                if math.sqrt((cx - ox)**2 + (cy - oy)**2) < 30:
-                    too_close = True
-                    break
-            if too_close:
-                continue
-            cluster_angle = random.uniform(0, math.pi * 2)
-            cluster_centers.append((cx, cy, cluster_angle))
+        # --- Grid-based town layout ---
+        block_size = 22
+        street_width = 8
+        grid_count = 5
+        cell_step = block_size + street_width  # 30
+        grid_offset = (grid_count - 1) * cell_step / 2  # 60
 
-        # --- 2. Place buildings per cluster ---
+        # Build block centers (skip center block = spawn plaza)
+        block_centers = []
+        for row in range(grid_count):
+            for col in range(grid_count):
+                cx = col * cell_step - grid_offset
+                cy = row * cell_step - grid_offset
+                if row == 2 and col == 2:
+                    continue
+                block_centers.append((cx, cy))
+
+        # --- 1. Place buildings in each block ---
         building_types = ['building_sm', 'building_md', 'building_lg']
-        for cx, cy, base_angle in cluster_centers:
-            num_buildings = random.randint(3, 6)
+        all_buildings = []  # track for crate placement
+        for cx, cy in block_centers:
+            num_buildings = random.randint(1, 3)
             placed = []
             for i in range(num_buildings):
                 btype = random.choice(building_types)
                 info = OBSTACLE_TYPES[btype]
                 hw, hd = info['half_w'], info['half_d']
 
-                if i == 0 or not placed:
+                if i == 0:
                     bx, by = cx, cy
-                else:
-                    # Place adjacent to a random previously placed building
-                    ref = random.choice(placed)
-                    ref_info = OBSTACLE_TYPES[ref['type']]
-                    side = random.choice(['right', 'below', 'left', 'above'])
-                    gap = 2.5  # tight hallway width
-                    cos_a = math.cos(base_angle)
-                    sin_a = math.sin(base_angle)
-                    if side == 'right':
-                        lx = ref_info['half_w'] + hw + gap
-                        ly = 0
-                    elif side == 'left':
-                        lx = -(ref_info['half_w'] + hw + gap)
-                        ly = 0
-                    elif side == 'below':
-                        lx = 0
-                        ly = ref_info['half_d'] + hd + gap
+                elif i == 1:
+                    # Place to the side of first building
+                    ref = placed[0]
+                    ref_hw = OBSTACLE_TYPES[ref['type']]['half_w']
+                    gap = 2.5
+                    if random.random() < 0.5:
+                        bx = ref['x'] + ref_hw + hw + gap
+                        by = ref['y']
                     else:
-                        lx = 0
-                        ly = -(ref_info['half_d'] + hd + gap)
-                    bx = ref['x'] + lx * cos_a - ly * sin_a
-                    by = ref['y'] + lx * sin_a + ly * cos_a
+                        bx = ref['x']
+                        by = ref['y'] + OBSTACLE_TYPES[ref['type']]['half_d'] + hd + gap
+                else:
+                    # Third building: try opposite side
+                    ref = placed[0]
+                    ref_hw = OBSTACLE_TYPES[ref['type']]['half_w']
+                    ref_hd = OBSTACLE_TYPES[ref['type']]['half_d']
+                    gap = 2.5
+                    if random.random() < 0.5:
+                        bx = ref['x'] - ref_hw - hw - gap
+                        by = ref['y']
+                    else:
+                        bx = ref['x']
+                        by = ref['y'] - ref_hd - hd - gap
 
-                # Clamp inside world
-                bx = max(-half + hw + 2, min(half - hw - 2, bx))
-                by = max(-half + hd + 2, min(half - hd - 2, by))
-                # Skip if overlaps spawn zone
-                if abs(bx) < SPAWN_CLEAR_RADIUS + hw and abs(by) < SPAWN_CLEAR_RADIUS + hd:
-                    continue
+                # Keep within block bounds
+                block_half = block_size / 2
+                bx = max(cx - block_half + hw, min(cx + block_half - hw, bx))
+                by = max(cy - block_half + hd, min(cy + block_half - hd, by))
 
-                self.obstacles.append(ObstacleState(btype, bx, by, base_angle))
+                self.obstacles.append(ObstacleState(btype, bx, by, 0.0))
                 placed.append({'type': btype, 'x': bx, 'y': by})
+                all_buildings.append({'type': btype, 'x': bx, 'y': by})
 
-            # Sidewalk patch around cluster
-            if placed:
-                min_x = min(b['x'] - OBSTACLE_TYPES[b['type']]['half_w'] for b in placed)
-                max_x = max(b['x'] + OBSTACLE_TYPES[b['type']]['half_w'] for b in placed)
-                min_y = min(b['y'] - OBSTACLE_TYPES[b['type']]['half_d'] for b in placed)
-                max_y = max(b['y'] + OBSTACLE_TYPES[b['type']]['half_d'] for b in placed)
-                pad = 4
-                sw = (max_x - min_x) + pad * 2
-                sd = (max_y - min_y) + pad * 2
-                scx = (min_x + max_x) / 2
-                scy = (min_y + max_y) / 2
-                self.ground_patches.append(GroundPatch('sidewalk', scx, scy, sw, sd))
+            # Sidewalk patch around block (thin edge, avoid overlapping roads)
+            pad = 1
+            self.ground_patches.append(
+                GroundPatch('sidewalk', cx, cy, block_size + pad * 2, block_size + pad * 2)
+            )
 
-        # --- 3. Roads connecting nearby clusters ---
-        for i in range(len(cluster_centers)):
-            for j in range(i + 1, len(cluster_centers)):
-                x1, y1, _ = cluster_centers[i]
-                x2, y2, _ = cluster_centers[j]
-                dist = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
-                if dist > 60:
-                    continue
-                # Road patch between clusters
-                mx = (x1 + x2) / 2
-                my = (y1 + y2) / 2
-                angle = math.atan2(y2 - y1, x2 - x1)
-                self.ground_patches.append(GroundPatch('road', mx, my, dist, 8.0, angle))
+        # --- 2. Streets: full-length N-S and E-S road patches ---
+        grid_min = -grid_offset - block_size / 2
+        grid_max = grid_offset + block_size / 2
+        grid_length = grid_max - grid_min
 
-        # --- 4. Cars along roads and near clusters ---
-        num_cars = random.randint(10, 15)
+        # Horizontal streets (between rows)
+        for i in range(grid_count - 1):
+            sy = i * cell_step - grid_offset + block_size / 2 + street_width / 2
+            self.ground_patches.append(
+                GroundPatch('road', 0, sy, grid_length + street_width, street_width)
+            )
+
+        # Vertical streets (between cols)
+        for i in range(grid_count - 1):
+            sx = i * cell_step - grid_offset + block_size / 2 + street_width / 2
+            self.ground_patches.append(
+                GroundPatch('road', sx, 0, street_width, grid_length + street_width)
+            )
+
+        # --- 3. Cars along streets ---
+        num_cars = random.randint(12, 18)
         for _ in range(num_cars):
             ctype = random.choice(['car', 'truck'])
-            # Place near a random cluster or road
-            cluster = random.choice(cluster_centers)
-            offset_dist = random.uniform(12, 25)
-            offset_angle = random.uniform(0, math.pi * 2)
-            vx = cluster[0] + math.cos(offset_angle) * offset_dist
-            vy = cluster[1] + math.sin(offset_angle) * offset_dist
-            vx = max(-half + 5, min(half - 5, vx))
-            vy = max(-half + 5, min(half - 5, vy))
-            if abs(vx) < SPAWN_CLEAR_RADIUS and abs(vy) < SPAWN_CLEAR_RADIUS:
-                continue
-            car_angle = offset_angle + random.uniform(-0.3, 0.3)
-            self.obstacles.append(ObstacleState(ctype, vx, vy, car_angle))
+            # Pick a random street
+            if random.random() < 0.5:
+                # Horizontal street
+                si = random.randint(0, grid_count - 2)
+                sy = si * cell_step - grid_offset + block_size / 2 + street_width / 2
+                sx = random.uniform(grid_min, grid_max)
+                car_angle = 0.0 + random.uniform(-0.15, 0.15)
+                # Offset to one side of street
+                sy += random.choice([-1, 1]) * random.uniform(1.5, 3.0)
+            else:
+                # Vertical street
+                si = random.randint(0, grid_count - 2)
+                sx = si * cell_step - grid_offset + block_size / 2 + street_width / 2
+                sy = random.uniform(grid_min, grid_max)
+                car_angle = math.pi / 2 + random.uniform(-0.15, 0.15)
+                sx += random.choice([-1, 1]) * random.uniform(1.5, 3.0)
 
-        # --- 5. Crates in hallways and open areas ---
-        num_crates = random.randint(15, 20)
+            if abs(sx) < SPAWN_CLEAR_RADIUS and abs(sy) < SPAWN_CLEAR_RADIUS:
+                continue
+            self.obstacles.append(ObstacleState(ctype, sx, sy, car_angle))
+
+        # --- 4. Crates near buildings within blocks ---
+        num_crates = random.randint(15, 22)
         for _ in range(num_crates):
-            cluster = random.choice(cluster_centers)
-            cx = cluster[0] + random.uniform(-15, 15)
-            cy = cluster[1] + random.uniform(-15, 15)
+            if not all_buildings:
+                break
+            bldg = random.choice(all_buildings)
+            binfo = OBSTACLE_TYPES[bldg['type']]
+            offset_angle = random.uniform(0, math.pi * 2)
+            dist = max(binfo['half_w'], binfo['half_d']) + random.uniform(2, 4)
+            cx = bldg['x'] + math.cos(offset_angle) * dist
+            cy = bldg['y'] + math.sin(offset_angle) * dist
             cx = max(-half + 3, min(half - 3, cx))
             cy = max(-half + 3, min(half - 3, cy))
             if abs(cx) < SPAWN_CLEAR_RADIUS and abs(cy) < SPAWN_CLEAR_RADIUS:
                 continue
+            # Don't place inside other obstacles
+            blocked = False
+            for obs in self.obstacles:
+                if obs.point_collides(cx, cy, 1.5):
+                    blocked = True
+                    break
+            if blocked:
+                continue
             self.obstacles.append(ObstacleState('crate', cx, cy, random.uniform(0, math.pi * 2)))
 
-        # --- 6. Barriers scattered around ---
-        num_barriers = random.randint(8, 12)
-        for _ in range(num_barriers):
-            bx = random.uniform(-half + 5, half - 5)
-            by = random.uniform(-half + 5, half - 5)
+        # --- 5. Barriers at some street intersections ---
+        num_barriers = random.randint(6, 10)
+        intersections = []
+        for ri in range(grid_count - 1):
+            for ci in range(grid_count - 1):
+                ix = ci * cell_step - grid_offset + block_size / 2 + street_width / 2
+                iy = ri * cell_step - grid_offset + block_size / 2 + street_width / 2
+                intersections.append((ix, iy))
+        random.shuffle(intersections)
+        for bx, by in intersections[:num_barriers]:
             if abs(bx) < SPAWN_CLEAR_RADIUS and abs(by) < SPAWN_CLEAR_RADIUS:
                 continue
             self.obstacles.append(ObstacleState('barrier', bx, by, random.uniform(0, math.pi)))
 
-        # --- 7. Mud patches in open areas ---
+        # --- 6. Mud patches in the outer wilderness ring ---
         num_mud = random.randint(10, 15)
         for _ in range(num_mud):
-            mx = random.uniform(-half + 10, half - 10)
-            my = random.uniform(-half + 10, half - 10)
+            # Place outside the town grid
+            for _attempt in range(20):
+                mx = random.uniform(-half + 10, half - 10)
+                my = random.uniform(-half + 10, half - 10)
+                # Must be outside the grid area
+                if abs(mx) > grid_max + 5 or abs(my) > grid_max + 5:
+                    break
+            else:
+                continue
             mw = random.uniform(6, 14)
             md = random.uniform(6, 14)
             self.ground_patches.append(GroundPatch('mud', mx, my, mw, md, random.uniform(0, math.pi)))
