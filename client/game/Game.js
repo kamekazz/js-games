@@ -13,6 +13,7 @@ import { CameraFollowSystem } from './systems/CameraFollowSystem.js';
 import { WeaponSystem } from './systems/WeaponSystem.js';
 import { LaserSightSystem } from './systems/LaserSightSystem.js';
 import { ProjectileSystem } from './systems/ProjectileSystem.js';
+import { ObstacleRenderSystem } from './systems/ObstacleRenderSystem.js';
 import { EnemyRenderSystem } from './systems/EnemyRenderSystem.js';
 import { ItemRenderSystem } from './systems/ItemRenderSystem.js';
 import { EffectsSystem } from './systems/EffectsSystem.js';
@@ -86,6 +87,9 @@ export class Game {
     this._projectileSystem = new ProjectileSystem(renderer);
     this._networkSync.projectileSystem = this._projectileSystem;
 
+    this._obstacleRenderSystem = new ObstacleRenderSystem(renderer);
+    this._networkSync.obstacleRenderSystem = this._obstacleRenderSystem;
+
     this._enemyRenderSystem = new EnemyRenderSystem(renderer);
     this._networkSync.enemyRenderSystem = this._enemyRenderSystem;
 
@@ -107,12 +111,15 @@ export class Game {
     world.addSystem(new InputSystem(input));
     world.addSystem(new AimSystem(input));
     world.addSystem(this._sprintSystem);
-    world.addSystem(new MovementSystem());
+    this._movementSystem = new MovementSystem();
+    this._networkSync.movementSystem = this._movementSystem;
+    world.addSystem(this._movementSystem);
     world.addSystem(this._weaponSystem);
     world.addSystem(this._laserSightSystem);
     world.addSystem(new CameraFollowSystem(cameraController));
     world.addSystem(this._networkSync);
     world.addSystem(this._projectileSystem);
+    world.addSystem(this._obstacleRenderSystem);
     world.addSystem(this._enemyRenderSystem);
     world.addSystem(this._itemRenderSystem);
     world.addSystem(this._effectsSystem);
@@ -179,6 +186,16 @@ export class Game {
 
     // Clean up projectile meshes
     for (const [, mesh] of this._projectileSystem.meshes) {
+      this.engine.renderer.remove(mesh);
+    }
+
+    // Clean up obstacle meshes
+    for (const mesh of this._obstacleRenderSystem.meshes) {
+      this.engine.renderer.remove(mesh);
+    }
+
+    // Clean up ground meshes
+    for (const mesh of this._obstacleRenderSystem.groundMeshes) {
       this.engine.renderer.remove(mesh);
     }
 

@@ -37,10 +37,24 @@ export class EnemyRenderSystem extends System {
 
       // Update HP bar
       const pct = Math.max(0, z.hp / z.maxHp);
-      entry.hpBar.scale.x = pct;
-      entry.hpBar.material.color.setHex(pct > 0.5 ? 0x44cc44 : pct > 0.25 ? 0xccaa22 : 0xcc2222);
-      entry.hpBg.visible = pct < 1;
-      entry.hpBar.visible = pct < 1;
+      const show = pct < 1;
+      entry.hpBg.visible = show;
+      entry.hpBar.visible = show;
+
+      if (show) {
+        // Billboard: cancel out parent rotation so HP bar faces camera
+        entry.hpGroup.rotation.y = -(z.angle - Math.PI / 2);
+
+        // Redraw fill bar canvas
+        const canvas = entry.hpBar.userData.canvas;
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, 128, 16);
+        const color = pct > 0.5 ? '#44cc44' : pct > 0.25 ? '#ccaa22' : '#cc2222';
+        ctx.fillStyle = color;
+        ctx.roundRect(0, 0, Math.round(128 * pct), 16, 4);
+        ctx.fill();
+        entry.hpBar.userData.texture.needsUpdate = true;
+      }
     }
 
     // Remove dead/gone zombies
@@ -182,25 +196,46 @@ export class EnemyRenderSystem extends System {
   }
 
   _addHpBar(group, barY) {
-    const hpBg = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.2, 0.15),
-      new THREE.MeshBasicMaterial({ color: 0x333333, side: THREE.DoubleSide })
-    );
-    hpBg.position.set(0, barY, 0);
-    hpBg.rotation.x = -Math.PI / 4;
+    // Container that we manually billboard each frame
+    const hpGroup = new THREE.Group();
+    hpGroup.position.set(0, barY, 0);
+    group.add(hpGroup);
+
+    // Background bar (dark)
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.width = 128;
+    bgCanvas.height = 16;
+    const bgCtx = bgCanvas.getContext('2d');
+    bgCtx.fillStyle = '#222222';
+    bgCtx.roundRect(0, 0, 128, 16, 4);
+    bgCtx.fill();
+    bgCtx.strokeStyle = '#000000';
+    bgCtx.lineWidth = 2;
+    bgCtx.roundRect(0, 0, 128, 16, 4);
+    bgCtx.stroke();
+    const bgTex = new THREE.CanvasTexture(bgCanvas);
+    const hpBg = new THREE.Sprite(new THREE.SpriteMaterial({ map: bgTex, depthTest: false }));
+    hpBg.scale.set(1.8, 0.25, 1);
+    hpBg.renderOrder = 998;
     hpBg.visible = false;
-    group.add(hpBg);
+    hpGroup.add(hpBg);
 
-    const hpBar = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.2, 0.15),
-      new THREE.MeshBasicMaterial({ color: 0x44cc44, side: THREE.DoubleSide })
-    );
-    hpBar.position.set(0, barY, -0.01);
-    hpBar.rotation.x = -Math.PI / 4;
+    // Fill bar (colored) — we redraw the canvas each update
+    const fillCanvas = document.createElement('canvas');
+    fillCanvas.width = 128;
+    fillCanvas.height = 16;
+    const fillTex = new THREE.CanvasTexture(fillCanvas);
+    const hpBar = new THREE.Sprite(new THREE.SpriteMaterial({ map: fillTex, depthTest: false }));
+    hpBar.scale.set(1.8, 0.25, 1);
+    hpBar.renderOrder = 999;
     hpBar.visible = false;
-    group.add(hpBar);
+    hpGroup.add(hpBar);
 
-    return { group, hpBar, hpBg };
+    // Store refs for redrawing
+    hpBar.userData.canvas = fillCanvas;
+    hpBar.userData.texture = fillTex;
+
+    return { group, hpBar, hpBg, hpGroup };
   }
 
   update(dt) {

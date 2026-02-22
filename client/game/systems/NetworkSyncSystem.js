@@ -25,8 +25,12 @@ export class NetworkSyncSystem extends System {
     this.scoreboard = null;        // set by Game.js
     this.hud = null;               // set by Game.js
     this.onGameOver = null;        // callback set by Game.js
+    this.obstacleRenderSystem = null; // set by Game.js
+    this.movementSystem = null;    // set by Game.js
     this.effectsSystem = null;     // set by Game.js
     this.audioManager = null;      // set by Game.js
+    this._obstaclesCreated = false;
+    this._groundCreated = false;
     this._sendInterval = 1000 / 20;
     this._lastSendTime = 0;
     this._serverTimeOffset = 0;
@@ -93,6 +97,22 @@ export class NetworkSyncSystem extends System {
     const renderTime = performance.now() + this._serverTimeOffset;
     const state = this.stateBuffer.getInterpolatedState(renderTime);
     if (!state) return;
+
+    // Create obstacle meshes once
+    if (!this._obstaclesCreated && this.obstacleRenderSystem && state.obstacles && state.obstacles.length > 0) {
+      this._obstaclesCreated = true;
+      this.obstacleRenderSystem.setObstacles(state.obstacles);
+      // Pass obstacle data for client-side collision prediction
+      if (this.movementSystem) {
+        this.movementSystem.obstacles = state.obstacles;
+      }
+    }
+
+    // Create ground patches once
+    if (!this._groundCreated && this.obstacleRenderSystem && state.ground && state.ground.length > 0) {
+      this._groundCreated = true;
+      this.obstacleRenderSystem.setGround(state.ground);
+    }
 
     const seen = new Set();
 

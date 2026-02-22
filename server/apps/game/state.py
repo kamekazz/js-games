@@ -16,7 +16,7 @@ PLAYER_SPRINT_MULTIPLIER = 1.7
 MAX_SPEED = PLAYER_SPEED * PLAYER_SPRINT_MULTIPLIER * 1.1
 # Minimum fire cooldown multiplier for anti-cheat (fraction of weapon fire_rate)
 FIRE_INTERVAL_TOLERANCE = 0.8
-WORLD_SIZE = 100
+WORLD_SIZE = 200
 TICK_RATE = 20
 TICK_INTERVAL = 1.0 / TICK_RATE
 
@@ -82,6 +82,18 @@ WEAPONS = {
 
 VALID_WEAPON_IDS = set(WEAPONS.keys())
 
+# Obstacle definitions (half-widths for collision)
+OBSTACLE_TYPES = {
+    'building_sm': {'half_w': 5.0,  'half_d': 4.0},
+    'building_md': {'half_w': 7.0,  'half_d': 5.0},
+    'building_lg': {'half_w': 9.0,  'half_d': 7.0},
+    'car':         {'half_w': 2.5,  'half_d': 1.25},
+    'truck':       {'half_w': 3.5,  'half_d': 1.5},
+    'crate':       {'half_w': 1.0,  'half_d': 1.0},
+    'barrier':     {'half_w': 2.0,  'half_d': 0.25},
+}
+SPAWN_CLEAR_RADIUS = 15  # keep center clear for player spawns
+
 PLAYER_MAX_HEALTH = 100
 RESPAWN_TIME = 3.0
 
@@ -117,6 +129,109 @@ class ItemDrop:
             'type': self.item_type,
             'x': round(self.x, 2),
             'y': round(self.y, 2),
+        }
+
+
+class GroundPatch:
+    """Non-collidable ground surface (road, mud, sidewalk)."""
+    __slots__ = ('patch_type', 'x', 'y', 'w', 'd', 'angle')
+
+    def __init__(self, patch_type, x, y, w, d, angle=0.0):
+        self.patch_type = patch_type
+        self.x = x
+        self.y = y
+        self.w = w
+        self.d = d
+        self.angle = angle
+
+    def to_dict(self):
+        return {
+            'type': self.patch_type,
+            'x': round(self.x, 2),
+            'y': round(self.y, 2),
+            'w': round(self.w, 2),
+            'd': round(self.d, 2),
+            'angle': round(self.angle, 3),
+        }
+
+
+class ObstacleState:
+    __slots__ = ('id', 'obstacle_type', 'x', 'y', 'angle', 'half_w', 'half_d',
+                 '_cos', '_sin')
+
+    _next_id = 0
+
+    def __init__(self, obstacle_type, x, y, angle):
+        ObstacleState._next_id += 1
+        self.id = ObstacleState._next_id
+        self.obstacle_type = obstacle_type
+        self.x = x
+        self.y = y
+        self.angle = angle
+        info = OBSTACLE_TYPES[obstacle_type]
+        self.half_w = info['half_w']
+        self.half_d = info['half_d']
+        # Cache rotation for collision checks
+        self._cos = math.cos(-angle)
+        self._sin = math.sin(-angle)
+
+    def point_collides(self, px, py, radius=0.0):
+        """Check if a point (with optional radius) collides with this obstacle."""
+        # Transform point into obstacle's local space
+        dx = px - self.x
+        dy = py - self.y
+        lx = dx * self._cos - dy * self._sin
+        ly = dx * self._sin + dy * self._cos
+        return (abs(lx) < self.half_w + radius and
+                abs(ly) < self.half_d + radius)
+
+    def push_out(self, px, py, radius):
+        """If point collides, push it out to the nearest edge. Returns (new_x, new_y, collided)."""
+        dx = px - self.x
+        dy = py - self.y
+        lx = dx * self._cos - dy * self._sin
+        ly = dx * self._sin + dy * self._cos
+
+        hw = self.half_w + radius
+        hd = self.half_d + radius
+
+        if abs(lx) >= hw or abs(ly) >= hd:
+            return px, py, False
+
+        # Find shortest push-out axis
+        push_right = hw - lx
+        push_left = hw + lx
+        push_top = hd - ly
+        push_bottom = hd + ly
+
+        min_push = min(push_right, push_left, push_top, push_bottom)
+
+        if min_push == push_right:
+            lx = hw
+        elif min_push == push_left:
+            lx = -hw
+        elif min_push == push_top:
+            ly = hd
+        else:
+            ly = -hd
+
+        # Transform back to world space (inverse rotation)
+        cos_a = self._cos
+        sin_a = self._sin
+        nx = self.x + lx * cos_a + ly * sin_a
+        ny = self.y - lx * sin_a + ly * cos_a
+
+        return nx, ny, True
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'type': self.obstacle_type,
+            'x': round(self.x, 2),
+            'y': round(self.y, 2),
+            'angle': round(self.angle, 3),
+            'hw': self.half_w,
+            'hd': self.half_d,
         }
 
 
@@ -213,6 +328,9 @@ class GameRoom:
         self._all_dead_timer = 0.0
         self.start_time = time.time()
         self.last_tick = time.time()
+        self.obstacles = []
+        self.ground_patches = []
+        self._generate_obstacles()
 
     def add_player(self, player_id, display_name='Player'):
         state = PlayerState(player_id, display_name)
@@ -328,6 +446,162 @@ class GameRoom:
         player.reload_timer = 0.0
         player.reloading = False
 
+    def _generate_obstacles(self):
+        half = WORLD_SIZE / 2
+
+        # --- 1. Generate cluster centers ---
+        cluster_centers = []
+        for _ in range(200):
+            if len(cluster_centers) >= 7:
+                break
+            cx = random.uniform(-half + 20, half - 20)
+            cy = random.uniform(-half + 20, half - 20)
+            # Avoid spawn zone
+            if abs(cx) < SPAWN_CLEAR_RADIUS and abs(cy) < SPAWN_CLEAR_RADIUS:
+                continue
+            # Min distance from other clusters
+            too_close = False
+            for ox, oy, _ in cluster_centers:
+                if math.sqrt((cx - ox)**2 + (cy - oy)**2) < 30:
+                    too_close = True
+                    break
+            if too_close:
+                continue
+            cluster_angle = random.uniform(0, math.pi * 2)
+            cluster_centers.append((cx, cy, cluster_angle))
+
+        # --- 2. Place buildings per cluster ---
+        building_types = ['building_sm', 'building_md', 'building_lg']
+        for cx, cy, base_angle in cluster_centers:
+            num_buildings = random.randint(3, 6)
+            placed = []
+            for i in range(num_buildings):
+                btype = random.choice(building_types)
+                info = OBSTACLE_TYPES[btype]
+                hw, hd = info['half_w'], info['half_d']
+
+                if i == 0:
+                    bx, by = cx, cy
+                else:
+                    # Place adjacent to a random previously placed building
+                    ref = random.choice(placed)
+                    ref_info = OBSTACLE_TYPES[ref['type']]
+                    side = random.choice(['right', 'below', 'left', 'above'])
+                    gap = 2.5  # tight hallway width
+                    cos_a = math.cos(base_angle)
+                    sin_a = math.sin(base_angle)
+                    if side == 'right':
+                        lx = ref_info['half_w'] + hw + gap
+                        ly = 0
+                    elif side == 'left':
+                        lx = -(ref_info['half_w'] + hw + gap)
+                        ly = 0
+                    elif side == 'below':
+                        lx = 0
+                        ly = ref_info['half_d'] + hd + gap
+                    else:
+                        lx = 0
+                        ly = -(ref_info['half_d'] + hd + gap)
+                    bx = ref['x'] + lx * cos_a - ly * sin_a
+                    by = ref['y'] + lx * sin_a + ly * cos_a
+
+                # Clamp inside world
+                bx = max(-half + hw + 2, min(half - hw - 2, bx))
+                by = max(-half + hd + 2, min(half - hd - 2, by))
+                # Skip if overlaps spawn zone
+                if abs(bx) < SPAWN_CLEAR_RADIUS + hw and abs(by) < SPAWN_CLEAR_RADIUS + hd:
+                    continue
+
+                self.obstacles.append(ObstacleState(btype, bx, by, base_angle))
+                placed.append({'type': btype, 'x': bx, 'y': by})
+
+            # Sidewalk patch around cluster
+            if placed:
+                min_x = min(b['x'] - OBSTACLE_TYPES[b['type']]['half_w'] for b in placed)
+                max_x = max(b['x'] + OBSTACLE_TYPES[b['type']]['half_w'] for b in placed)
+                min_y = min(b['y'] - OBSTACLE_TYPES[b['type']]['half_d'] for b in placed)
+                max_y = max(b['y'] + OBSTACLE_TYPES[b['type']]['half_d'] for b in placed)
+                pad = 4
+                sw = (max_x - min_x) + pad * 2
+                sd = (max_y - min_y) + pad * 2
+                scx = (min_x + max_x) / 2
+                scy = (min_y + max_y) / 2
+                self.ground_patches.append(GroundPatch('sidewalk', scx, scy, sw, sd))
+
+        # --- 3. Roads connecting nearby clusters ---
+        for i in range(len(cluster_centers)):
+            for j in range(i + 1, len(cluster_centers)):
+                x1, y1, _ = cluster_centers[i]
+                x2, y2, _ = cluster_centers[j]
+                dist = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+                if dist > 60:
+                    continue
+                # Road patch between clusters
+                mx = (x1 + x2) / 2
+                my = (y1 + y2) / 2
+                angle = math.atan2(y2 - y1, x2 - x1)
+                self.ground_patches.append(GroundPatch('road', mx, my, dist, 8.0, angle))
+
+        # --- 4. Cars along roads and near clusters ---
+        num_cars = random.randint(10, 15)
+        for _ in range(num_cars):
+            ctype = random.choice(['car', 'truck'])
+            # Place near a random cluster or road
+            cluster = random.choice(cluster_centers)
+            offset_dist = random.uniform(12, 25)
+            offset_angle = random.uniform(0, math.pi * 2)
+            vx = cluster[0] + math.cos(offset_angle) * offset_dist
+            vy = cluster[1] + math.sin(offset_angle) * offset_dist
+            vx = max(-half + 5, min(half - 5, vx))
+            vy = max(-half + 5, min(half - 5, vy))
+            if abs(vx) < SPAWN_CLEAR_RADIUS and abs(vy) < SPAWN_CLEAR_RADIUS:
+                continue
+            car_angle = offset_angle + random.uniform(-0.3, 0.3)
+            self.obstacles.append(ObstacleState(ctype, vx, vy, car_angle))
+
+        # --- 5. Crates in hallways and open areas ---
+        num_crates = random.randint(15, 20)
+        for _ in range(num_crates):
+            cluster = random.choice(cluster_centers)
+            cx = cluster[0] + random.uniform(-15, 15)
+            cy = cluster[1] + random.uniform(-15, 15)
+            cx = max(-half + 3, min(half - 3, cx))
+            cy = max(-half + 3, min(half - 3, cy))
+            if abs(cx) < SPAWN_CLEAR_RADIUS and abs(cy) < SPAWN_CLEAR_RADIUS:
+                continue
+            self.obstacles.append(ObstacleState('crate', cx, cy, random.uniform(0, math.pi * 2)))
+
+        # --- 6. Barriers scattered around ---
+        num_barriers = random.randint(8, 12)
+        for _ in range(num_barriers):
+            bx = random.uniform(-half + 5, half - 5)
+            by = random.uniform(-half + 5, half - 5)
+            if abs(bx) < SPAWN_CLEAR_RADIUS and abs(by) < SPAWN_CLEAR_RADIUS:
+                continue
+            self.obstacles.append(ObstacleState('barrier', bx, by, random.uniform(0, math.pi)))
+
+        # --- 7. Mud patches in open areas ---
+        num_mud = random.randint(10, 15)
+        for _ in range(num_mud):
+            mx = random.uniform(-half + 10, half - 10)
+            my = random.uniform(-half + 10, half - 10)
+            mw = random.uniform(6, 14)
+            md = random.uniform(6, 14)
+            self.ground_patches.append(GroundPatch('mud', mx, my, mw, md, random.uniform(0, math.pi)))
+
+    def _push_out_of_obstacles(self, x, y, radius):
+        """Push a point out of all obstacles. Returns (new_x, new_y)."""
+        for obs in self.obstacles:
+            x, y, _ = obs.push_out(x, y, radius)
+        return x, y
+
+    def _projectile_hits_obstacle(self, px, py):
+        """Check if a projectile point is inside any obstacle."""
+        for obs in self.obstacles:
+            if obs.point_collides(px, py, 0.0):
+                return obs
+        return None
+
     def tick(self, dt):
         self.events = []
         half = WORLD_SIZE / 2
@@ -388,6 +662,8 @@ class GameRoom:
             player.y += player.vy * speed * dt
             player.x = max(-half, min(half, player.x))
             player.y = max(-half, min(half, player.y))
+            # Obstacle collision
+            player.x, player.y = self._push_out_of_obstacles(player.x, player.y, 0.5)
 
             # Weapon cooldowns
             if player.fire_cooldown > 0:
@@ -443,6 +719,8 @@ class GameRoom:
                 zombie.y += (dy / dist) * zombie.speed * dt
                 zombie.x = max(-half, min(half, zombie.x))
                 zombie.y = max(-half, min(half, zombie.y))
+                # Obstacle collision
+                zombie.x, zombie.y = self._push_out_of_obstacles(zombie.x, zombie.y, zombie.size * 0.5)
 
             # Attack player on contact
             if zombie.attack_timer > 0:
@@ -482,6 +760,17 @@ class GameRoom:
             if proj.traveled >= proj.max_range:
                 continue
             if abs(proj.x) > half or abs(proj.y) > half:
+                continue
+
+            # Check obstacle collision
+            hit_obs = self._projectile_hits_obstacle(proj.x, proj.y)
+            if hit_obs:
+                self.events.append({
+                    'type': 'proj_hit',
+                    'x': round(proj.x, 2),
+                    'y': round(proj.y, 2),
+                    'dmg': 0,
+                })
                 continue
 
             hit = False
@@ -632,6 +921,8 @@ class GameRoom:
             ],
             'zombies': [z.to_dict() for z in self.zombies if z.alive],
             'items': [i.to_dict() for i in self.items],
+            'obstacles': [o.to_dict() for o in self.obstacles],
+            'ground': [g.to_dict() for g in self.ground_patches],
             'wave': self.wave_spawner.wave,
             'waveActive': self.wave_spawner.wave_active,
             'gameOver': self.game_over,
