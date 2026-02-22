@@ -10,6 +10,8 @@ export class InputManager {
       shooting: false,          // true when mouse button or joystick aim is active
       aimJoystickJustReleased: false, // true for one frame on joystick release
       mouseJustReleased: false,       // true for one frame on mouse release
+      mouseActive: false,       // true once mouse has been moved (desktop)
+      lastAimAngle: null,       // persists last aim angle from joystick/mouse
       actions: {},
     };
 
@@ -105,12 +107,16 @@ export class InputManager {
     this._prevJoystickAimActive = joystickAimActive;
     this._prevMouseButtonDown = this._mouseButtonDown;
 
+    this.state.mouseActive = this._mouseActive;
+
     if (joystickAimActive) {
       this.state.aimX = this._joystickAim.x;
       this.state.aimY = this._joystickAim.y;
+      this.state.lastAimAngle = Math.atan2(this._joystickAim.y, this._joystickAim.x);
     } else if (this._mouseActive) {
       this.state.aimX = this._mouseAim.x;
       this.state.aimY = this._mouseAim.y;
+      this.state.lastAimAngle = Math.atan2(this._mouseAim.y, this._mouseAim.x);
     }
   }
 

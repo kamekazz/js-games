@@ -11,7 +11,8 @@ from .zombies import ZombieState, NightCycleSpawner, ZOMBIE_TYPES, NIGHT_DURATIO
 logger = logging.getLogger('game.anticheat')
 
 PLAYER_SPEED = 12
-PLAYER_SPRINT_MULTIPLIER = 1.7
+PLAYER_SPRINT_MULTIPLIER = 1.0
+PLAYER_WALK_MULTIPLIER = 0.5
 # Anti-cheat: max allowed speed (sprint + small tolerance)
 MAX_SPEED = PLAYER_SPEED * PLAYER_SPRINT_MULTIPLIER * 1.1
 # Minimum fire cooldown multiplier for anti-cheat (fraction of weapon fire_rate)
@@ -114,8 +115,8 @@ PLAYER_MAX_HEALTH = 100
 
 # Stamina
 MAX_STAMINA = 100
-STAMINA_WALK_DRAIN = 3        # per second while walking (not sprinting)
-STAMINA_SPRINT_DRAIN = 25     # per second while sprinting
+STAMINA_WALK_DRAIN = 0        # no stamina drain while walking
+STAMINA_SPRINT_DRAIN = 3     # per second while sprinting
 STAMINA_REGEN = 25            # per second while standing still
 STAMINA_REGEN_DELAY = 0.3     # seconds before regen starts
 EXHAUSTION_THRESHOLD = 30     # below this, speed drops
@@ -1180,7 +1181,7 @@ class GameRoom:
             surface_mult = self._get_surface_multiplier(player.x, player.y)
 
             # Sprint multiplier
-            sprint_mult = PLAYER_SPRINT_MULTIPLIER if player.sprinting and player.stamina > 0 else 1.0
+            sprint_mult = PLAYER_SPRINT_MULTIPLIER if player.sprinting and player.stamina > 0 else PLAYER_WALK_MULTIPLIER
 
             # Movement
             speed = PLAYER_SPEED * sprint_mult * exhaustion_mult * surface_mult

@@ -4,7 +4,7 @@ import { Position } from '../components/Position.js';
 import { Sprint } from '../components/Sprint.js';
 import { Velocity } from '../components/Velocity.js';
 import { Health } from '../components/Health.js';
-import { PLAYER_SPEED } from '@shared/constants.js';
+import { PLAYER_SPEED, PLAYER_WALK_MULTIPLIER } from '@shared/constants.js';
 
 const SURFACE_SPEED = {
   road: 1.0,
@@ -108,7 +108,7 @@ export class SprintSystem extends System {
       const surfaceMult = this._getSurfaceMultiplier(pos.x, pos.y);
 
       // --- Sprint multiplier ---
-      const sprintMult = sprint.isSprinting ? sprint.speedMultiplier : 1.0;
+      const sprintMult = sprint.isSprinting ? sprint.speedMultiplier : PLAYER_WALK_MULTIPLIER;
 
       // --- Final speed ---
       vel.speed = PLAYER_SPEED * sprintMult * exhaustionMult * surfaceMult;

@@ -1,6 +1,7 @@
 import { System } from '@engine/ecs/System.js';
 import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Rotation } from '../components/Rotation.js';
+import { Sprint } from '../components/Sprint.js';
 
 export class AimSystem extends System {
   constructor(inputManager) {
@@ -17,14 +18,22 @@ export class AimSystem extends System {
       if (!pc.isLocal) continue;
 
       const rot = entity.get(Rotation);
+      const sprint = entity.get(Sprint);
+      const isMoving = input.moveX !== 0 || input.moveY !== 0;
+      const isSprinting = sprint && sprint.isSprinting;
 
-      // Face aim direction while holding aim input (mouse click or joystick aim)
-      // On the release frame, preserve the aimed rotation so the shot fires correctly
-      // Otherwise face the movement direction
-      const justReleased = input.mouseJustReleased || input.aimJoystickJustReleased;
-      if (input.shooting && (input.aimX !== 0 || input.aimY !== 0)) {
+      // Priority:
+      // 1. Sprinting → face movement direction
+      // 2. Mouse active (desktop) → always face mouse position
+      // 3. Aim joystick used (mobile) → face last aim direction
+      // 4. Moving with no aim data → face movement direction (fallback)
+      if (isSprinting && isMoving) {
+        rot.angle = Math.atan2(input.moveY, input.moveX);
+      } else if (input.mouseActive) {
         rot.angle = Math.atan2(input.aimY, input.aimX);
-      } else if (!justReleased && (input.moveX !== 0 || input.moveY !== 0)) {
+      } else if (input.lastAimAngle !== null) {
+        rot.angle = input.lastAimAngle;
+      } else if (isMoving) {
         rot.angle = Math.atan2(input.moveY, input.moveX);
       }
     }
