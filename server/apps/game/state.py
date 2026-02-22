@@ -6,7 +6,7 @@ import time
 import math
 import random
 import logging
-from .zombies import ZombieState, WaveSpawner, ZOMBIE_TYPES
+from .zombies import ZombieState, NightCycleSpawner, ZOMBIE_TYPES, NIGHT_DURATION
 
 logger = logging.getLogger('game.anticheat')
 
@@ -95,7 +95,6 @@ OBSTACLE_TYPES = {
 SPAWN_CLEAR_RADIUS = 15  # keep center clear for player spawns
 
 PLAYER_MAX_HEALTH = 100
-RESPAWN_TIME = 3.0
 
 # Stamina
 MAX_STAMINA = 100
@@ -122,9 +121,6 @@ ITEM_TYPES = {
 ITEM_DROP_CHANCE = 0.35  # 35% chance a zombie drops an item
 ITEM_PICKUP_RADIUS = 1.5
 ITEM_LIFETIME = 15.0  # seconds before item disappears
-
-# Game over: all players dead for this long = game over
-GAME_OVER_DEAD_TIME = 5.0
 
 # Interaction / extraction constants
 EXTRACTION_ZONE_RADIUS = 8.0
@@ -382,7 +378,7 @@ class ProjectileState:
 class PlayerState:
     __slots__ = (
         'player_id', 'display_name', 'x', 'y', 'angle', 'vx', 'vy',
-        'health', 'alive', 'respawn_timer',
+        'health', 'alive', 'eliminated',
         'weapon_id', 'ammo', 'mag_size', 'fire_cooldown', 'reload_timer', 'reloading',
         'score', 'zombie_kills', 'deaths', 'shots_fired', 'shots_hit',
         'sprinting', '_last_shot_time',
@@ -403,7 +399,7 @@ class PlayerState:
         # Health
         self.health = PLAYER_MAX_HEALTH
         self.alive = True
-        self.respawn_timer = 0.0
+        self.eliminated = False
         # Weapon
         self.weapon_id = 'pistol'
         weapon = WEAPONS[self.weapon_id]
@@ -468,19 +464,17 @@ class GameRoom:
         self.projectiles = []   # list of ProjectileState
         self.zombies = []       # list of ZombieState
         self.items = []         # list of ItemDrop
-        self.wave_spawner = WaveSpawner(WORLD_SIZE)
+        self.night_spawner = NightCycleSpawner(WORLD_SIZE)
         self.events = []        # events to broadcast this tick
         self.kills = {}         # player_id -> kill count
         self.game_over = False
-        self.game_over_sent = False
-        self._all_dead_timer = 0.0
         self.start_time = time.time()
         self.last_tick = time.time()
         self.obstacles = []
         self.ground_patches = []
         self.extraction_zones = []
         self.chests = []
-        self._prev_wave_active = False
+        self._prev_night_active = False
         self._generate_obstacles()
         self._generate_extraction_zones()
 
@@ -836,12 +830,12 @@ class GameRoom:
             zones.append(ExtractionZone(x, y))
         self.extraction_zones = zones
 
-    def _spawn_wave_chests(self):
-        """Spawn 4-6 chests near buildings at wave start."""
+    def _spawn_night_chests(self):
+        """Spawn chests near buildings at start of each night."""
         buildings = [o for o in self.obstacles if o.obstacle_type.startswith('building')]
         if not buildings:
             return
-        num_chests = random.randint(4, 6)
+        num_chests = self.night_spawner._get_chest_count()
         for _ in range(num_chests):
             building = random.choice(buildings)
             # Spawn near building edge
@@ -1071,41 +1065,13 @@ class GameRoom:
             return
 
         alive_players = [p for p in self.players.values() if p.alive]
-        extracted_players = [p for p in self.players.values() if p.extracted]
 
-        # --- Game over detection ---
-        # Exclude extracted players from "all dead" check
-        non_extracted = [p for p in self.players.values() if not p.extracted]
-        alive_non_extracted = [p for p in non_extracted if p.alive]
-        if non_extracted and not alive_non_extracted and self.wave_spawner.wave > 0:
-            self._all_dead_timer += dt
-            if self._all_dead_timer >= GAME_OVER_DEAD_TIME:
-                self.game_over = True
-                elapsed = time.time() - self.start_time
-                # Wave survival bonus
-                for p in self.players.values():
-                    if not p.extracted:
-                        p.score += self.wave_spawner.wave * 50
-                self.events.append({
-                    'type': 'game_over',
-                    'wave': self.wave_spawner.wave,
-                    'elapsed': round(elapsed, 1),
-                    'scores': [
-                        {
-                            'id': p.player_id,
-                            'name': p.display_name,
-                            'score': p.score if p.extracted else 0,
-                            'kills': p.zombie_kills,
-                            'deaths': p.deaths,
-                            'accuracy': round(p.shots_hit / max(p.shots_fired, 1) * 100),
-                            'extracted': p.extracted,
-                        }
-                        for p in self.players.values()
-                    ],
-                })
-                return
-        else:
-            self._all_dead_timer = 0.0
+        # --- Game over detection (permadeath) ---
+        # Active = not extracted AND not eliminated
+        active_players = [p for p in self.players.values() if not p.extracted and not p.eliminated]
+        if not active_players and self.night_spawner.night > 0:
+            self.game_over = True
+            return
 
         # --- Update actions (hold-to-interact) ---
         self._update_actions(dt)
@@ -1113,28 +1079,7 @@ class GameRoom:
         # Update players
         for player in self.players.values():
             if not player.alive:
-                if player.extracted:
-                    continue  # Extracted players don't respawn
-                player.respawn_timer -= dt
-                if player.respawn_timer <= 0:
-                    player.alive = True
-                    player.health = PLAYER_MAX_HEALTH
-                    player.stamina = MAX_STAMINA
-                    player.x = random.uniform(-10, 10)
-                    player.y = random.uniform(-10, 10)
-                    # Respawn with pistol
-                    player.weapon_id = 'pistol'
-                    weapon = WEAPONS['pistol']
-                    player.ammo = weapon['magazine']
-                    player.mag_size = weapon['magazine']
-                    player.reloading = False
-                    player.action_holding = False
-                    player.action_progress = 0.0
-                    player.action_target_id = None
-                    player.action_target_type = None
-                    player.action_duration = 0.0
-                    self.events.append({'type': 'respawn', 'pid': player.player_id})
-                continue
+                continue  # Dead (extracted or eliminated) — skip
 
             # --- Stamina ---
             is_moving = player.vx != 0 or player.vy != 0
@@ -1192,25 +1137,27 @@ class GameRoom:
                         player.ammo += give
                         player.weapon_ammo_reserve[player.weapon_id] = reserve - give
 
-        # --- Wave spawning ---
+        # --- Night cycle spawning ---
         alive_zombie_count = sum(1 for z in self.zombies if z.alive)
-        spawns = self.wave_spawner.update(dt, alive_zombie_count, alive_players)
-        for ztype, zx, zy in spawns:
-            zombie = ZombieState(ztype, zx, zy)
+        spawns, night_event = self.night_spawner.update(dt, alive_zombie_count, alive_players)
+        for ztype, zx, zy, stat_mults in spawns:
+            zombie = ZombieState(ztype, zx, zy, stat_mults=stat_mults)
             self.zombies.append(zombie)
 
-        # Emit wave_start event and spawn chests
-        if spawns and self.wave_spawner.total_spawned == len(spawns):
+        if night_event == 'night_start':
             self.events.append({
-                'type': 'wave_start',
-                'wave': self.wave_spawner.wave,
+                'type': 'night_start',
+                'night': self.night_spawner.night,
+                'bloodMoon': self.night_spawner.is_blood_moon,
             })
-            self._spawn_wave_chests()
-
-        # Clear unopened chests when wave ends
-        if self._prev_wave_active and not self.wave_spawner.wave_active:
+            self._spawn_night_chests()
+        elif night_event == 'dawn':
+            self.events.append({
+                'type': 'dawn',
+                'night': self.night_spawner.night,
+            })
+            # Clear unopened chests at dawn
             self.chests = [c for c in self.chests if c.opened]
-        self._prev_wave_active = self.wave_spawner.wave_active
 
         # --- Update zombies (AI: chase nearest player) ---
         for zombie in self.zombies:
@@ -1262,7 +1209,7 @@ class GameRoom:
                 if nearest.health <= 0:
                     nearest.health = 0
                     nearest.alive = False
-                    nearest.respawn_timer = RESPAWN_TIME
+                    nearest.eliminated = True
                     nearest.vx = 0
                     nearest.vy = 0
                     nearest.deaths += 1
@@ -1270,6 +1217,17 @@ class GameRoom:
                         'type': 'kill',
                         'pid': nearest.player_id,
                         'by': 'zombie',
+                    })
+                    self.events.append({
+                        'type': 'player_eliminated',
+                        'pid': nearest.player_id,
+                        'night': self.night_spawner.night,
+                        'elapsed': round(time.time() - self.start_time, 1),
+                        'name': nearest.display_name,
+                        'score': 0,
+                        'kills': nearest.zombie_kills,
+                        'deaths': nearest.deaths,
+                        'accuracy': round(nearest.shots_hit / max(nearest.shots_fired, 1) * 100),
                     })
 
         # --- Update projectiles (hit zombies AND players) ---
@@ -1364,13 +1322,25 @@ class GameRoom:
                         if player.health <= 0:
                             player.health = 0
                             player.alive = False
-                            player.respawn_timer = RESPAWN_TIME
+                            player.eliminated = True
                             player.vx = 0
                             player.vy = 0
+                            player.deaths += 1
                             self.events.append({
                                 'type': 'kill',
                                 'pid': player.player_id,
                                 'by': proj.owner_id,
+                            })
+                            self.events.append({
+                                'type': 'player_eliminated',
+                                'pid': player.player_id,
+                                'night': self.night_spawner.night,
+                                'elapsed': round(time.time() - self.start_time, 1),
+                                'name': player.display_name,
+                                'score': 0,
+                                'kills': player.zombie_kills,
+                                'deaths': player.deaths,
+                                'accuracy': round(player.shots_hit / max(player.shots_fired, 1) * 100),
                             })
                         hit = True
                         break
@@ -1462,8 +1432,12 @@ class GameRoom:
             'ground': [g.to_dict() for g in self.ground_patches],
             'extractionZones': [z.to_dict() for z in self.extraction_zones],
             'chests': [c.to_dict() for c in self.chests if not c.opened],
-            'wave': self.wave_spawner.wave,
-            'waveActive': self.wave_spawner.wave_active,
+            'night': self.night_spawner.night,
+            'nightActive': self.night_spawner.night_active,
+            'nightElapsed': round(self.night_spawner.night_elapsed, 1),
+            'nightDuration': NIGHT_DURATION,
+            'isDawn': not self.night_spawner.night_active and self.night_spawner.night > 0 and self.night_spawner._night_ended,
+            'bloodMoon': self.night_spawner.is_blood_moon,
             'gameOver': self.game_over,
             'events': self.events,
         }

@@ -27,6 +27,7 @@ export class NetworkSyncSystem extends System {
     this.scoreboard = null;        // set by Game.js
     this.hud = null;               // set by Game.js
     this.onGameOver = null;        // callback set by Game.js
+    this.onEliminated = null;      // callback set by Game.js
     this.obstacleRenderSystem = null; // set by Game.js
     this.movementSystem = null;    // set by Game.js
     this.sprintSystem = null;      // set by Game.js
@@ -47,6 +48,7 @@ export class NetworkSyncSystem extends System {
     this._remoteEntities = new Map();
     this._latestState = null;
     this._latestEvents = [];
+    this._nightLightingSet = false;
     // Idle direction arrow
     this._idleTimer = 0;
     this._idleArrow = null;
@@ -317,9 +319,14 @@ export class NetworkSyncSystem extends System {
           this.effectsSystem.spawnDeathBurst(evt.x, evt.y);
         }
         if (evt.by === this.localPlayerId) this.hud.addKill();
-      } else if (evt.type === 'wave_start') {
-        this.hud.showWave(evt.wave);
-        if (this.audioManager) this.audioManager.playWaveStart();
+      } else if (evt.type === 'night_start') {
+        this.hud.showNightStart(evt.night, evt.bloodMoon);
+        if (this.audioManager) this.audioManager.playNightStart();
+        this.renderer.setNightLighting(true, evt.bloodMoon);
+      } else if (evt.type === 'dawn') {
+        this.hud.showDawnAnnounce(evt.night);
+        if (this.audioManager) this.audioManager.playDawn();
+        this.renderer.setNightLighting(false, false);
       } else if (evt.type === 'item_pickup' && evt.pid === this.localPlayerId) {
         // Typed ammo pickup
         if (evt.item === 'ammo' && evt.weapon) {
@@ -364,14 +371,37 @@ export class NetworkSyncSystem extends System {
         } else {
           this.hud.showExtractionKillFeed(evt.name || this._findPlayerName(evt.pid));
         }
+      } else if (evt.type === 'player_eliminated') {
+        if (evt.pid === this.localPlayerId) {
+          if (this.onEliminated) this.onEliminated(evt);
+        } else {
+          this.hud.showKill('Zombie', evt.name || this._findPlayerName(evt.pid));
+        }
       } else if (evt.type === 'game_over') {
         if (this.onGameOver) this.onGameOver(evt);
       }
     }
 
-    // Update wave info and score from state
+    // Update night info and score from state
     if (this._latestState) {
-      this.hud.updateWave(this._latestState.wave || 0, this._latestState.waveActive || false);
+      this.hud.updateNight(
+        this._latestState.night || 0,
+        this._latestState.nightActive || false,
+        this._latestState.nightElapsed || 0,
+        this._latestState.nightDuration || 720,
+        this._latestState.isDawn || false,
+        this._latestState.bloodMoon || false,
+      );
+
+      // Handle mid-night join: set lighting immediately on first state
+      if (this._latestState.nightActive && !this._nightLightingSet) {
+        this._nightLightingSet = true;
+        this.renderer.setNightLighting(true, this._latestState.bloodMoon || false, true);
+      } else if (this._latestState.isDawn && !this._nightLightingSet) {
+        this._nightLightingSet = true;
+        this.renderer.setNightLighting(false, false, true);
+      }
+
       // Find local player score
       const local = this._latestState.players.find(p => p.id === this.localPlayerId);
       if (local) {

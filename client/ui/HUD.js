@@ -27,7 +27,8 @@ export class HUD {
         </div>
       </div>
       <div id="hud-center" style="text-align: center; display: flex; flex-direction: column; align-items: center; gap: 2px;">
-        <div id="hud-wave" style="font-size: 13px; color: #ffcc44; font-weight: bold;"></div>
+        <div id="hud-night" style="font-size: 13px; color: #ffcc44; font-weight: bold;"></div>
+        <div id="hud-clock" style="font-size: 11px; color: #aaa;"></div>
         <div style="display: flex; gap: 14px; align-items: center;">
           <div id="hud-kills" style="font-size: 13px; color: #ccc;">Kills: 0</div>
           <div id="hud-score" style="font-size: 14px; color: #ffcc44; font-weight: bold;">Score: 0</div>
@@ -52,7 +53,8 @@ export class HUD {
     this._reloadHint = this.el.querySelector('#hud-reload-hint');
     this._weaponHints = this.el.querySelector('#hud-weapon-hints');
     this._killFeed = this.el.querySelector('#hud-kill-feed');
-    this._waveEl = this.el.querySelector('#hud-wave');
+    this._nightEl = this.el.querySelector('#hud-night');
+    this._clockEl = this.el.querySelector('#hud-clock');
     this._killsEl = this.el.querySelector('#hud-kills');
     this._scoreEl = this.el.querySelector('#hud-score');
     this._actionContainer = this.el.querySelector('#hud-action-container');
@@ -65,7 +67,7 @@ export class HUD {
     }
     this._killCount = 0;
     this._killTimeout = null;
-    this._waveTimeout = null;
+    this._nightTimeout = null;
     this._pickupTimeout = null;
     this._unlockTimeout = null;
 
@@ -200,26 +202,69 @@ export class HUD {
   }
 
   showDeath() {
-    this._killFeed.innerHTML = '<span style="font-size: 20px; color: #ff4444;">YOU DIED</span><br><span style="font-size: 13px;">Respawning...</span>';
+    this._killFeed.innerHTML = '<span style="font-size: 20px; color: #ff4444;">YOU DIED</span><br><span style="font-size: 13px;">Eliminated</span>';
     if (this._killTimeout) clearTimeout(this._killTimeout);
     this._killTimeout = setTimeout(() => {
       this._killFeed.textContent = '';
     }, 3000);
   }
 
-  updateWave(wave, active) {
-    if (wave > 0) {
-      this._waveEl.textContent = `Wave ${wave}${active ? '' : ' - Complete!'}`;
+  updateNight(night, active, elapsed, duration, isDawn, bloodMoon) {
+    if (night <= 0) return;
+    if (isDawn) {
+      this._nightEl.textContent = 'Dawn';
+      this._nightEl.style.color = '#fff8e0';
+      this._clockEl.textContent = '';
+    } else if (bloodMoon) {
+      this._nightEl.textContent = `BLOOD MOON - Night ${night}`;
+      this._nightEl.style.color = '#ff4444';
+      this._clockEl.textContent = this._formatGameClock(elapsed);
+      this._clockEl.style.color = '#ff8888';
+    } else {
+      this._nightEl.textContent = `Night ${night}`;
+      this._nightEl.style.color = '#aaaaff';
+      this._clockEl.textContent = this._formatGameClock(elapsed);
+      this._clockEl.style.color = '#aaa';
     }
   }
 
-  showWave(wave) {
-    this._waveAnnounce.textContent = `Wave ${wave}`;
+  _formatGameClock(elapsed) {
+    // Map 0-720s to 8:00 PM (20:00) → 8:00 AM (8:00), 12 game-hours
+    const gameHours = (elapsed / 720) * 12;
+    const h24 = (20 + gameHours) % 24; // 24-hour clock
+    const minute = Math.floor((gameHours % 1) * 60);
+    let dh = Math.floor(h24) % 12;
+    if (dh === 0) dh = 12;
+    const period = Math.floor(h24) >= 12 ? 'PM' : 'AM';
+    return `${dh}:${minute.toString().padStart(2, '0')} ${period}`;
+  }
+
+  showNightStart(night, bloodMoon) {
+    if (bloodMoon) {
+      this._waveAnnounce.textContent = 'BLOOD MOON';
+      this._waveAnnounce.style.color = '#ff4444';
+      this._waveAnnounce.style.textShadow = '0 0 30px rgba(255,0,0,0.7)';
+    } else {
+      this._waveAnnounce.textContent = `Night ${night}`;
+      this._waveAnnounce.style.color = '#aaaaff';
+      this._waveAnnounce.style.textShadow = '0 0 20px rgba(100,100,255,0.5)';
+    }
     this._waveAnnounce.style.opacity = '1';
-    if (this._waveTimeout) clearTimeout(this._waveTimeout);
-    this._waveTimeout = setTimeout(() => {
+    if (this._nightTimeout) clearTimeout(this._nightTimeout);
+    this._nightTimeout = setTimeout(() => {
       this._waveAnnounce.style.opacity = '0';
-    }, 2500);
+    }, 3000);
+  }
+
+  showDawnAnnounce(night) {
+    this._waveAnnounce.textContent = `Dawn \u2014 Night ${night} Survived!`;
+    this._waveAnnounce.style.color = '#fff8e0';
+    this._waveAnnounce.style.textShadow = '0 0 20px rgba(255,240,150,0.5)';
+    this._waveAnnounce.style.opacity = '1';
+    if (this._nightTimeout) clearTimeout(this._nightTimeout);
+    this._nightTimeout = setTimeout(() => {
+      this._waveAnnounce.style.opacity = '0';
+    }, 3000);
   }
 
   addKill() {
@@ -268,7 +313,7 @@ export class HUD {
 
   destroy() {
     if (this._killTimeout) clearTimeout(this._killTimeout);
-    if (this._waveTimeout) clearTimeout(this._waveTimeout);
+    if (this._nightTimeout) clearTimeout(this._nightTimeout);
     if (this._pickupTimeout) clearTimeout(this._pickupTimeout);
     if (this._unlockTimeout) clearTimeout(this._unlockTimeout);
     this._waveAnnounce.remove();

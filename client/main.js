@@ -73,6 +73,13 @@ function joinRoom(roomCode, playerName) {
         showMenu();
       });
     });
+    currentGame.onEliminated = (data) => {
+      resultsScreen = new ResultsScreen(overlay, data, () => {
+        resultsScreen.destroy();
+        resultsScreen = null;
+        showMenu();
+      });
+    };
     currentGame.onLeave = () => showMenu();
     engine.start();
   });

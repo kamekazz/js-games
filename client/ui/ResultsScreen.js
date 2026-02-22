@@ -14,52 +14,88 @@ export class ResultsScreen {
       animation: fadeIn 0.5s ease-out;
     `;
 
-    const scores = data.scores || [];
-    scores.sort((a, b) => b.score - a.score);
-
     const minutes = Math.floor(data.elapsed / 60);
     const seconds = Math.floor(data.elapsed % 60);
     const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-    const rows = scores.map((s, i) => {
-      const extracted = s.extracted;
-      const scoreDisplay = extracted ? s.score : '<span style="color: #ff4444;">NOT EXTRACTED</span>';
-      const statusColor = extracted ? '#44ff44' : '#ff4444';
-      const statusText = extracted ? 'Extracted' : 'Lost';
-      return `
-        <tr style="background: ${i % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'};">
-          <td style="padding: 8px 16px; text-align: left;">${i === 0 ? 'MVP ' : ''}${s.name}</td>
-          <td style="padding: 8px 16px; text-align: center; color: ${statusColor}; font-weight: bold;">${statusText}</td>
-          <td style="padding: 8px 16px; text-align: center; color: #ffcc44; font-weight: bold;">${scoreDisplay}</td>
-          <td style="padding: 8px 16px; text-align: center;">${s.kills}</td>
-          <td style="padding: 8px 16px; text-align: center;">${s.deaths}</td>
-          <td style="padding: 8px 16px; text-align: center;">${s.accuracy}%</td>
-        </tr>
-      `;
-    }).join('');
+    const isElimination = !data.scores && data.pid;
 
-    this.el.innerHTML = `
-      <h1 style="font-size: 2.5rem; color: #ff4444; margin-bottom: 8px;">GAME OVER</h1>
-      <p style="font-size: 1.1rem; color: #aaa; margin-bottom: 4px;">Wave ${data.wave} | Survived ${timeStr}</p>
-      <table style="margin-top: 24px; border-collapse: collapse; min-width: 500px; max-width: 90vw;">
-        <thead>
-          <tr style="border-bottom: 2px solid #444;">
-            <th style="padding: 8px 16px; text-align: left; color: #888;">Player</th>
-            <th style="padding: 8px 16px; text-align: center; color: #888;">Status</th>
-            <th style="padding: 8px 16px; text-align: center; color: #888;">Score</th>
-            <th style="padding: 8px 16px; text-align: center; color: #888;">Kills</th>
-            <th style="padding: 8px 16px; text-align: center; color: #888;">Deaths</th>
-            <th style="padding: 8px 16px; text-align: center; color: #888;">Accuracy</th>
+    if (isElimination) {
+      // Single-player elimination (permadeath)
+      this.el.innerHTML = `
+        <h1 style="font-size: 2.5rem; color: #ff4444; margin-bottom: 8px;">YOU DIED</h1>
+        <p style="font-size: 1.1rem; color: #aaa; margin-bottom: 4px;">Night ${data.night} | Survived ${timeStr}</p>
+        <table style="margin-top: 24px; border-collapse: collapse; min-width: 400px; max-width: 90vw;">
+          <thead>
+            <tr style="border-bottom: 2px solid #444;">
+              <th style="padding: 8px 16px; text-align: left; color: #888;">Player</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Score</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Kills</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Deaths</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Accuracy</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background: rgba(255,255,255,0.05);">
+              <td style="padding: 8px 16px; text-align: left;">${data.name}</td>
+              <td style="padding: 8px 16px; text-align: center; color: #ff4444; font-weight: bold;">0</td>
+              <td style="padding: 8px 16px; text-align: center;">${data.kills}</td>
+              <td style="padding: 8px 16px; text-align: center;">${data.deaths}</td>
+              <td style="padding: 8px 16px; text-align: center;">${data.accuracy}%</td>
+            </tr>
+          </tbody>
+        </table>
+        <button id="results-continue" style="
+          margin-top: 32px; padding: 14px 40px; border-radius: 8px;
+          border: none; background: #4488ff; color: white;
+          font-size: 16px; font-weight: bold; cursor: pointer;
+        ">Back to Menu</button>
+      `;
+    } else {
+      // Multi-player game over (existing logic)
+      const scores = data.scores || [];
+      scores.sort((a, b) => b.score - a.score);
+
+      const rows = scores.map((s, i) => {
+        const extracted = s.extracted;
+        const scoreDisplay = extracted ? s.score : '<span style="color: #ff4444;">NOT EXTRACTED</span>';
+        const statusColor = extracted ? '#44ff44' : '#ff4444';
+        const statusText = extracted ? 'Extracted' : 'Lost';
+        return `
+          <tr style="background: ${i % 2 === 0 ? 'rgba(255,255,255,0.05)' : 'transparent'};">
+            <td style="padding: 8px 16px; text-align: left;">${i === 0 ? 'MVP ' : ''}${s.name}</td>
+            <td style="padding: 8px 16px; text-align: center; color: ${statusColor}; font-weight: bold;">${statusText}</td>
+            <td style="padding: 8px 16px; text-align: center; color: #ffcc44; font-weight: bold;">${scoreDisplay}</td>
+            <td style="padding: 8px 16px; text-align: center;">${s.kills}</td>
+            <td style="padding: 8px 16px; text-align: center;">${s.deaths}</td>
+            <td style="padding: 8px 16px; text-align: center;">${s.accuracy}%</td>
           </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <button id="results-continue" style="
-        margin-top: 32px; padding: 14px 40px; border-radius: 8px;
-        border: none; background: #4488ff; color: white;
-        font-size: 16px; font-weight: bold; cursor: pointer;
-      ">Back to Menu</button>
-    `;
+        `;
+      }).join('');
+
+      this.el.innerHTML = `
+        <h1 style="font-size: 2.5rem; color: #ff4444; margin-bottom: 8px;">GAME OVER</h1>
+        <p style="font-size: 1.1rem; color: #aaa; margin-bottom: 4px;">Night ${data.night} | Survived ${timeStr}</p>
+        <table style="margin-top: 24px; border-collapse: collapse; min-width: 500px; max-width: 90vw;">
+          <thead>
+            <tr style="border-bottom: 2px solid #444;">
+              <th style="padding: 8px 16px; text-align: left; color: #888;">Player</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Status</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Score</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Kills</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Deaths</th>
+              <th style="padding: 8px 16px; text-align: center; color: #888;">Accuracy</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+        <button id="results-continue" style="
+          margin-top: 32px; padding: 14px 40px; border-radius: 8px;
+          border: none; background: #4488ff; color: white;
+          font-size: 16px; font-weight: bold; cursor: pointer;
+        ">Back to Menu</button>
+      `;
+    }
 
     container.appendChild(this.el);
 
