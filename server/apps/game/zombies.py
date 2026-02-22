@@ -107,7 +107,7 @@ class NightCycleSpawner:
         self._night_ended = False  # True during dawn
 
     def _get_base_interval(self):
-        return max(0.25, 2.0 - (self.night - 1) * 0.06)
+        return max(0.25, 2.0 - (self.night - 1) * 0.15)
 
     def _get_effective_interval(self):
         base = self._get_base_interval()
@@ -121,7 +121,7 @@ class NightCycleSpawner:
         return max(0.15, interval)
 
     def _get_max_alive(self):
-        base = 15 + self.night * 3
+        base = 12 + self.night * 5
         if self.is_blood_moon:
             base += 15
         return min(base, 80)
