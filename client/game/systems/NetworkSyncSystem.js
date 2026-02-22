@@ -132,9 +132,10 @@ export class NetworkSyncSystem extends System {
       }
     }
 
-    // Update obstacle loot states (cars being looted)
-    if (this._obstaclesCreated && this.interactionSystem && state.obstacles) {
-      this.interactionSystem.obstacles = state.obstacles;
+    // Update obstacle loot states from latest server state (not interpolated,
+    // since _lerp only returns players). Mirrors how _updateChests works.
+    if (this._obstaclesCreated && this.interactionSystem && this._latestState && this._latestState.obstacles) {
+      this.interactionSystem.obstacles = this._latestState.obstacles;
     }
 
     // Create ground patches once

@@ -53,8 +53,7 @@ export class StateBuffer {
       const a = playersA.get(id);
       if (a) {
         players.push({
-          id,
-          name: b.name,
+          ...b,
           x: a.x + (b.x - a.x) * t,
           y: a.y + (b.y - a.y) * t,
           angle: this._lerpAngle(a.angle, b.angle, t),
@@ -64,7 +63,8 @@ export class StateBuffer {
       }
     }
 
-    return { players };
+    // Preserve all non-player state from the newer snapshot
+    return { ...stateB, players };
   }
 
   _lerpAngle(a, b, t) {
