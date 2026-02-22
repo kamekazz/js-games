@@ -3,6 +3,7 @@ import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Weapon } from '../components/Weapon.js';
 import { Health } from '../components/Health.js';
 import { Rotation } from '../components/Rotation.js';
+import { WEAPONS } from '@shared/constants.js';
 
 const HOTKEY_MAP = {
   Digit1: 'pistol',
@@ -75,7 +76,8 @@ export class WeaponSystem extends System {
         const angle = entity.get(Rotation).angle;
         this.networkClient.send({ type: 'player_shoot', angle });
         weapon.cooldown = weapon.fireRate;
-        weapon.ammo--;
+        const cost = WEAPONS[weapon.id].ammoCost || 1;
+        weapon.ammo = Math.max(0, weapon.ammo - cost);
       }
     }
 

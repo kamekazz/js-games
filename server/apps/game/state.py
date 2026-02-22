@@ -44,6 +44,7 @@ WEAPONS = {
         'range': 80,
         'pellets': 2,
         'spread_angle': 0,
+        'ammo_cost': 2,
         'falloff': False,
         'falloff_start': 0,
         'falloff_min': 1.0,
@@ -51,12 +52,13 @@ WEAPONS = {
     'uzi': {
         'damage': 10,
         'fire_rate': 0.1,
-        'magazine': 30,
+        'magazine': 32,
         'reload_time': 1.8,
         'projectile_speed': 35,
         'range': 20,
-        'pellets': 1,
+        'pellets': 4,
         'spread_angle': 0,
+        'ammo_cost': 4,
         'falloff': True,
         'falloff_start': 10,
         'falloff_min': 0.6,
@@ -73,6 +75,8 @@ WEAPONS = {
         'falloff': True,
         'falloff_start': 5,
         'falloff_min': 0.3,
+        'close_bonus': 1.5,
+        'close_bonus_range': 5,
     },
 }
 
@@ -256,7 +260,7 @@ class GameRoom:
             return
         player._last_shot_time = now
 
-        player.ammo -= 1
+        player.ammo = max(0, player.ammo - weapon.get('ammo_cost', 1))
         player.fire_cooldown = weapon['fire_rate']
         player.shots_fired += 1
 
@@ -597,7 +601,14 @@ class GameRoom:
 
     def _calc_damage(self, proj):
         weapon = WEAPONS.get(proj.weapon_id)
-        if not weapon or not weapon.get('falloff'):
+        if not weapon:
+            return proj.damage
+        # Close-range bonus (e.g. shotgun +20% up close)
+        close_range = weapon.get('close_bonus_range', 0)
+        close_mult = weapon.get('close_bonus', 1.0)
+        if close_range > 0 and proj.traveled <= close_range:
+            return round(proj.damage * close_mult)
+        if not weapon.get('falloff'):
             return proj.damage
         start = weapon['falloff_start']
         if proj.traveled <= start:
