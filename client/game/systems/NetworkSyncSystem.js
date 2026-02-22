@@ -28,6 +28,7 @@ export class NetworkSyncSystem extends System {
     this.hud = null;               // set by Game.js
     this.onGameOver = null;        // callback set by Game.js
     this.onEliminated = null;      // callback set by Game.js
+    this.onExtracted = null;       // callback set by Game.js
     this.obstacleRenderSystem = null; // set by Game.js
     this.movementSystem = null;    // set by Game.js
     this.sprintSystem = null;      // set by Game.js
@@ -104,13 +105,18 @@ export class NetworkSyncSystem extends System {
       }
     }
 
-    this.networkClient.send({
+    const msg = {
       type: 'player_move',
       mx: input.moveX,
       my: input.moveY,
       angle,
       sprint: sprinting,
-    });
+    };
+    // Piggyback action holding state so server always has latest
+    if (this.interactionSystem && this.interactionSystem._held) {
+      msg.holding = true;
+    }
+    this.networkClient.send(msg);
   }
 
   _applyServerState() {
@@ -369,6 +375,13 @@ export class NetworkSyncSystem extends System {
       } else if (evt.type === 'extracted') {
         if (evt.pid === this.localPlayerId) {
           this.hud.showExtracted(true);
+          // After a brief delay so the player sees the banner, fire the extraction callback
+          if (this.onExtracted) {
+            const extractData = evt;
+            setTimeout(() => {
+              if (this.onExtracted) this.onExtracted(extractData);
+            }, 2500);
+          }
         } else {
           this.hud.showExtractionKillFeed(evt.name || this._findPlayerName(evt.pid));
         }

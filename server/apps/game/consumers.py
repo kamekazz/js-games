@@ -1,7 +1,9 @@
 import json
 import asyncio
 import time
+from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.db import models
 from .state import game_manager, TICK_INTERVAL
 
 
@@ -61,6 +63,11 @@ class GameConsumer(AsyncWebsocketConsumer):
         self.player_id = self.channel_name[-8:]
         player_state = room.add_player(self.player_id, display_name)
 
+        # Bridge authenticated user identity
+        user = self.scope.get('user')
+        if user and user.is_authenticated:
+            player_state.user_id = user.id
+
         # Send join confirmation with player's own ID
         await self.send(text_data=json.dumps({
             'type': 'joined',
@@ -93,6 +100,9 @@ class GameConsumer(AsyncWebsocketConsumer):
                 float(data.get('angle', 0)),
                 sprinting=data.get('sprint', False),
             )
+            # Accept piggybacked action state for reliability
+            if 'holding' in data:
+                room.process_action_hold(self.player_id, data['holding'])
 
     def _handle_shoot(self, data):
         room = game_manager.rooms.get(self.room_code)
@@ -137,6 +147,11 @@ class GameConsumer(AsyncWebsocketConsumer):
 
                 room.tick(dt)
 
+                # Save leaderboard entries for extracted players
+                for event in room.events:
+                    if event.get('type') == 'extracted':
+                        await self._save_extraction(room, event['pid'])
+
                 await self.channel_layer.group_send(
                     self.group_name,
                     {
@@ -147,6 +162,52 @@ class GameConsumer(AsyncWebsocketConsumer):
                 )
         except asyncio.CancelledError:
             pass
+
+    async def _save_extraction(self, room, player_id):
+        """Save a leaderboard entry for an extracted player."""
+        player = room.players.get(player_id)
+        if not player or not player.extracted or player._leaderboard_saved:
+            return
+        if player.score <= 0:
+            return
+
+        player._leaderboard_saved = True
+        survival_time = round(time.time() - room.start_time, 1)
+        accuracy = round(player.shots_hit / max(player.shots_fired, 1) * 100)
+        night = room.night_spawner.night
+
+        await self._create_leaderboard_entry(
+            user_id=player.user_id,
+            display_name=player.display_name,
+            score=player.score,
+            zombie_kills=player.zombie_kills,
+            night_survived=night,
+            survival_time=survival_time,
+            accuracy=accuracy,
+        )
+
+    @database_sync_to_async
+    def _create_leaderboard_entry(self, user_id, display_name, score,
+                                   zombie_kills, night_survived, survival_time, accuracy):
+        from .models import LeaderboardEntry
+        from apps.accounts.models import PlayerProfile
+
+        LeaderboardEntry.objects.create(
+            user_id=user_id,
+            display_name=display_name,
+            score=score,
+            zombie_kills=zombie_kills,
+            night_survived=night_survived,
+            survival_time=survival_time,
+            accuracy=accuracy,
+        )
+
+        # Update PlayerProfile stats if authenticated
+        if user_id:
+            PlayerProfile.objects.filter(user_id=user_id).update(
+                games_played=models.F('games_played') + 1,
+                total_kills=models.F('total_kills') + zombie_kills,
+            )
 
     # Channel layer message handlers
     async def game_state(self, event):

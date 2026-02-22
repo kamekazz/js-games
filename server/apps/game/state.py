@@ -140,7 +140,7 @@ ITEM_LIFETIME = 15.0  # seconds before item disappears
 
 # Interaction / extraction constants
 EXTRACTION_ZONE_RADIUS = 8.0
-EXTRACTION_HOLD_DURATION = 30.0
+EXTRACTION_HOLD_DURATION = 15.0
 CHEST_INTERACT_RADIUS = 2.5
 CAR_INTERACT_RADIUS = 3.5
 
@@ -402,6 +402,7 @@ class PlayerState:
         'unlocked_weapons', 'weapon_ammo_reserve',
         'action_holding', 'action_progress', 'action_target_id', 'action_target_type', 'action_duration',
         'extracted',
+        'user_id', '_leaderboard_saved',
     )
 
     def __init__(self, player_id, display_name='Player'):
@@ -447,6 +448,9 @@ class PlayerState:
         self.action_duration = 0.0
         # Extraction
         self.extracted = False
+        # Identity / leaderboard
+        self.user_id = None
+        self._leaderboard_saved = False
 
     def to_dict(self):
         return {
@@ -769,6 +773,16 @@ class GameRoom:
 
             if abs(sx) < SPAWN_CLEAR_RADIUS and abs(sy) < SPAWN_CLEAR_RADIUS:
                 continue
+            # Don't place cars inside existing obstacles (buildings, etc.)
+            car_info = OBSTACLE_TYPES[ctype]
+            car_radius = max(car_info['half_w'], car_info['half_d'])
+            blocked = False
+            for obs in self.obstacles:
+                if obs.point_collides(sx, sy, car_radius):
+                    blocked = True
+                    break
+            if blocked:
+                continue
             self.obstacles.append(ObstacleState(ctype, sx, sy, car_angle))
 
         # --- 4. Crates near buildings within blocks ---
@@ -990,7 +1004,7 @@ class GameRoom:
             if not player.alive or player.extracted:
                 continue
 
-            is_moving = player.vx != 0 or player.vy != 0
+            is_moving = abs(player.vx) > 0.05 or abs(player.vy) > 0.05
 
             if not player.action_holding or is_moving:
                 # Reset action progress
@@ -1038,6 +1052,10 @@ class GameRoom:
                         'pid': player.player_id,
                         'score': player.score,
                         'name': player.display_name,
+                        'kills': player.zombie_kills,
+                        'night': self.night_spawner.night,
+                        'elapsed': round(time.time() - self.start_time, 1),
+                        'accuracy': round(player.shots_hit / max(player.shots_fired, 1) * 100),
                     })
                 elif target_type == 'chest':
                     for chest in self.chests:

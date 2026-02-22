@@ -38,6 +38,7 @@ export class Game {
     this.spawnY = spawnY;
     this.onGameOver = onGameOver;
     this.onEliminated = null; // set externally
+    this.onExtracted = null;  // set externally
     this.onLeave = null; // set externally
     this._joysticks = [];
     this._buttons = [];
@@ -122,6 +123,9 @@ export class Game {
     };
     this._networkSync.onEliminated = (data) => {
       if (this.onEliminated) this.onEliminated(data);
+    };
+    this._networkSync.onExtracted = (data) => {
+      if (this.onExtracted) this.onExtracted(data);
     };
 
     this._weaponSystem = new WeaponSystem(input, this.networkClient, this._audio);

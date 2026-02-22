@@ -50,6 +50,17 @@ export class InteractionSystem extends System {
       this.networkClient.send({ type: 'player_action', holding: this._held });
     }
 
+    // Re-send while held to ensure server stays in sync
+    if (this._held) {
+      this._resendTimer = (this._resendTimer || 0) + dt;
+      if (this._resendTimer >= 0.5) {
+        this._resendTimer = 0;
+        this.networkClient.send({ type: 'player_action', holding: true });
+      }
+    } else {
+      this._resendTimer = 0;
+    }
+
     // Client-side proximity check for UI hints
     this.actionAvailable = false;
     this.actionLabel = '';

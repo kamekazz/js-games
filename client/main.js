@@ -80,6 +80,13 @@ function joinRoom(roomCode, playerName) {
         showMenu();
       });
     };
+    currentGame.onExtracted = (data) => {
+      resultsScreen = new ResultsScreen(overlay, data, () => {
+        resultsScreen.destroy();
+        resultsScreen = null;
+        showMenu();
+      });
+    };
     currentGame.onLeave = () => showMenu();
     engine.start();
   });

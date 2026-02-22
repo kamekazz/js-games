@@ -1,4 +1,5 @@
 import { api } from '@engine/network/ApiClient.js';
+import { Leaderboard } from '@ui/Leaderboard.js';
 
 export class MainMenu {
   constructor(sceneManager, onCreateRoom, onJoinRoom, displayName = 'Player', onLogout = null) {
@@ -8,6 +9,7 @@ export class MainMenu {
     this.displayName = displayName;
     this.onLogout = onLogout;
     this.el = null;
+    this._leaderboard = null;
   }
 
   async enter(container) {
@@ -38,6 +40,9 @@ export class MainMenu {
           </button>
         </div>
       </div>
+      <button id="menu-leaderboard" style="margin-top: 16px; padding: 12px 28px; border-radius: 8px; border: 1px solid #ffcc44; background: transparent; color: #ffcc44; font-size: 15px; font-weight: bold; cursor: pointer;">
+          Leaderboard
+        </button>
       <div id="menu-rooms" style="margin-top: 24px; width: 320px; max-height: 200px; overflow-y: auto;"></div>
       <p id="menu-error" style="color: #ff4444; margin-top: 12px; display: none;"></p>
     `;
@@ -60,6 +65,15 @@ export class MainMenu {
 
     this.el.querySelector('#menu-logout').addEventListener('click', () => {
       if (this.onLogout) this.onLogout();
+    });
+
+    this.el.querySelector('#menu-leaderboard').addEventListener('click', () => {
+      this._leaderboard = new Leaderboard(this.el, () => {
+        if (this._leaderboard) {
+          this._leaderboard.destroy();
+          this._leaderboard = null;
+        }
+      });
     });
 
     this._loadRooms();
@@ -100,6 +114,10 @@ export class MainMenu {
   }
 
   exit() {
+    if (this._leaderboard) {
+      this._leaderboard.destroy();
+      this._leaderboard = null;
+    }
     if (this.el) this.el.remove();
   }
 }

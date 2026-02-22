@@ -18,9 +18,53 @@ export class ResultsScreen {
     const seconds = Math.floor(data.elapsed % 60);
     const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
-    const isElimination = !data.scores && data.pid;
+    const isExtraction = data.type === 'extracted';
+    const isElimination = !data.scores && data.pid && !isExtraction;
 
-    if (isElimination) {
+    if (isExtraction) {
+      // Successful extraction — celebratory screen
+      this.el.innerHTML = `
+        <h1 style="font-size: 2.5rem; color: #44ff44; margin-bottom: 8px;">EXTRACTED</h1>
+        <p style="font-size: 1.2rem; color: #ccc; margin-bottom: 4px; max-width: 480px; text-align: center; line-height: 1.5;">
+          You survived the zombie apocalypse and made it out alive.
+          Rest up — you'll be back for another run soon.
+        </p>
+        <p style="font-size: 1rem; color: #888; margin-bottom: 20px;">Night ${data.night} | Survived ${timeStr}</p>
+        <div style="
+          background: rgba(255,255,255,0.05); border: 1px solid #333; border-radius: 12px;
+          padding: 20px 32px; min-width: 300px; max-width: 90vw;
+        ">
+          <div style="text-align: center; margin-bottom: 16px;">
+            <span style="font-size: 2.2rem; font-weight: bold; color: #ffcc44;">${data.score}</span>
+            <span style="font-size: 1rem; color: #888; display: block;">SCORE</span>
+          </div>
+          <div style="display: flex; justify-content: center; gap: 32px;">
+            <div style="text-align: center;">
+              <span style="font-size: 1.4rem; font-weight: bold;">${data.kills}</span>
+              <span style="font-size: 0.8rem; color: #888; display: block;">Kills</span>
+            </div>
+            <div style="text-align: center;">
+              <span style="font-size: 1.4rem; font-weight: bold;">${data.accuracy}%</span>
+              <span style="font-size: 0.8rem; color: #888; display: block;">Accuracy</span>
+            </div>
+            <div style="text-align: center;">
+              <span style="font-size: 1.4rem; font-weight: bold;">${data.night}</span>
+              <span style="font-size: 0.8rem; color: #888; display: block;">Nights</span>
+            </div>
+            <div style="text-align: center;">
+              <span style="font-size: 1.4rem; font-weight: bold;">${timeStr}</span>
+              <span style="font-size: 0.8rem; color: #888; display: block;">Time</span>
+            </div>
+          </div>
+        </div>
+        <p style="font-size: 0.85rem; color: #555; margin-top: 16px;">Your score has been saved to the leaderboard.</p>
+        <button id="results-continue" style="
+          margin-top: 20px; padding: 14px 40px; border-radius: 8px;
+          border: none; background: #44aa44; color: white;
+          font-size: 16px; font-weight: bold; cursor: pointer;
+        ">Back to Menu</button>
+      `;
+    } else if (isElimination) {
       // Single-player elimination (permadeath)
       this.el.innerHTML = `
         <h1 style="font-size: 2.5rem; color: #ff4444; margin-bottom: 8px;">YOU DIED</h1>
