@@ -11,6 +11,7 @@ export class Weapon extends Component {
     this.fireRate = w.fireRate;
     this.cooldown = 0;
     this.reloading = false;
+    this.unlockedWeapons = new Set(['pistol']);
   }
 
   switchTo(weaponId) {

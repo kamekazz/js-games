@@ -2,6 +2,7 @@ import { System } from '@engine/ecs/System.js';
 import { PlayerControlled } from '../components/PlayerControlled.js';
 import { Weapon } from '../components/Weapon.js';
 import { Health } from '../components/Health.js';
+import { Sprint } from '../components/Sprint.js';
 import { Rotation } from '../components/Rotation.js';
 import { WEAPONS } from '@shared/constants.js';
 
@@ -37,7 +38,7 @@ export class WeaponSystem extends System {
     // Fire on release: shoot when mouse or joystick aim is released
     const wantShoot = input.mouseJustReleased || input.aimJoystickJustReleased;
 
-    const entities = this.world.query(PlayerControlled, Weapon, Health, Rotation);
+    const entities = this.world.query(PlayerControlled, Weapon, Health, Sprint, Rotation);
 
     for (const entity of entities) {
       const pc = entity.get(PlayerControlled);
@@ -45,26 +46,32 @@ export class WeaponSystem extends System {
 
       const weapon = entity.get(Weapon);
       const health = entity.get(Health);
+      const sprint = entity.get(Sprint);
       if (!health.alive) continue;
 
-      // Weapon switch
+      // Weapon switch — must be unlocked
       if (this._switchRequested && !weapon.reloading && this._switchRequested !== weapon.id) {
-        weapon.switchTo(this._switchRequested);
-        this.networkClient.send({ type: 'player_switch_weapon', weapon: this._switchRequested });
+        if (weapon.unlockedWeapons.has(this._switchRequested)) {
+          weapon.switchTo(this._switchRequested);
+          this.networkClient.send({ type: 'player_switch_weapon', weapon: this._switchRequested });
+        }
       }
 
       // Cooldown
       if (weapon.cooldown > 0) weapon.cooldown -= dt;
 
+      // Can't reload when fully exhausted
+      const canReload = sprint.stamina > 0;
+
       // Auto-reload when empty and not already reloading
-      if (weapon.ammo <= 0 && !weapon.reloading) {
+      if (weapon.ammo <= 0 && !weapon.reloading && canReload) {
         this.networkClient.send({ type: 'player_reload' });
         weapon.reloading = true;
         if (this.audioManager) this.audioManager.playReload();
       }
 
       // Manual reload
-      if (this._reloadRequested && !weapon.reloading && weapon.ammo < weapon.maxAmmo) {
+      if (this._reloadRequested && !weapon.reloading && weapon.ammo < weapon.maxAmmo && canReload) {
         this.networkClient.send({ type: 'player_reload' });
         weapon.reloading = true;
         this._reloadRequested = false;

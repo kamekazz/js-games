@@ -126,19 +126,50 @@ ITEM_LIFETIME = 15.0  # seconds before item disappears
 # Game over: all players dead for this long = game over
 GAME_OVER_DEAD_TIME = 5.0
 
+# Interaction / extraction constants
+EXTRACTION_ZONE_RADIUS = 8.0
+EXTRACTION_HOLD_DURATION = 30.0
+CHEST_INTERACT_RADIUS = 2.5
+CAR_INTERACT_RADIUS = 3.5
+
+# Chest loot table: (weight, loot_dict, hold_duration)
+CHEST_LOOT_TABLE = [
+    (30, {'type': 'weapon_unlock', 'weapon_id': 'rifle'}, 4.0),
+    (30, {'type': 'weapon_unlock', 'weapon_id': 'uzi'}, 4.0),
+    (20, {'type': 'weapon_unlock', 'weapon_id': 'shotgun'}, 5.0),
+    (40, {'type': 'ammo', 'weapon_id': 'rifle', 'amount': 18}, 2.5),
+    (40, {'type': 'ammo', 'weapon_id': 'uzi', 'amount': 32}, 2.5),
+    (30, {'type': 'ammo', 'weapon_id': 'shotgun', 'amount': 12}, 2.5),
+    (35, {'type': 'health', 'amount': 50}, 2.0),
+    (20, {'type': 'score', 'amount': 200}, 3.0),
+]
+
+# Car loot table (slightly better rewards)
+CAR_LOOT_TABLE = [
+    (25, {'type': 'weapon_unlock', 'weapon_id': 'rifle'}, 3.5),
+    (25, {'type': 'weapon_unlock', 'weapon_id': 'uzi'}, 3.5),
+    (20, {'type': 'weapon_unlock', 'weapon_id': 'shotgun'}, 4.0),
+    (40, {'type': 'ammo', 'weapon_id': 'rifle', 'amount': 24}, 2.5),
+    (40, {'type': 'ammo', 'weapon_id': 'uzi', 'amount': 40}, 2.5),
+    (30, {'type': 'ammo', 'weapon_id': 'shotgun', 'amount': 16}, 2.5),
+    (30, {'type': 'health', 'amount': 60}, 2.0),
+    (15, {'type': 'score', 'amount': 300}, 3.0),
+]
+
 
 class ItemDrop:
-    __slots__ = ('id', 'item_type', 'x', 'y', 'lifetime')
+    __slots__ = ('id', 'item_type', 'x', 'y', 'lifetime', 'weapon_id')
 
     _next_id = 0
 
-    def __init__(self, item_type, x, y):
+    def __init__(self, item_type, x, y, weapon_id=None):
         ItemDrop._next_id += 1
         self.id = ItemDrop._next_id
         self.item_type = item_type
         self.x = x
         self.y = y
         self.lifetime = ITEM_LIFETIME
+        self.weapon_id = weapon_id  # which weapon's ammo (None for health)
 
     def to_dict(self):
         return {
@@ -146,6 +177,68 @@ class ItemDrop:
             'type': self.item_type,
             'x': round(self.x, 2),
             'y': round(self.y, 2),
+        }
+
+
+def _roll_loot(table):
+    """Weighted random pick from a loot table. Returns (loot_dict, hold_duration)."""
+    total = sum(w for w, _, _ in table)
+    r = random.random() * total
+    cumulative = 0
+    for weight, loot, duration in table:
+        cumulative += weight
+        if r <= cumulative:
+            return dict(loot), duration
+    # Fallback
+    _, loot, duration = table[-1]
+    return dict(loot), duration
+
+
+class ExtractionZone:
+    __slots__ = ('id', 'x', 'y', 'radius')
+
+    _next_id = 0
+
+    def __init__(self, x, y, radius=EXTRACTION_ZONE_RADIUS):
+        ExtractionZone._next_id += 1
+        self.id = ExtractionZone._next_id
+        self.x = x
+        self.y = y
+        self.radius = radius
+
+    def contains(self, px, py):
+        dx = px - self.x
+        dy = py - self.y
+        return dx * dx + dy * dy < self.radius * self.radius
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'x': round(self.x, 2),
+            'y': round(self.y, 2),
+            'r': self.radius,
+        }
+
+
+class LootChest:
+    __slots__ = ('id', 'x', 'y', 'opened', 'loot', 'hold_duration')
+
+    _next_id = 0
+
+    def __init__(self, x, y):
+        LootChest._next_id += 1
+        self.id = LootChest._next_id
+        self.x = x
+        self.y = y
+        self.opened = False
+        self.loot, self.hold_duration = _roll_loot(CHEST_LOOT_TABLE)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'x': round(self.x, 2),
+            'y': round(self.y, 2),
+            'opened': self.opened,
         }
 
 
@@ -174,7 +267,7 @@ class GroundPatch:
 
 class ObstacleState:
     __slots__ = ('id', 'obstacle_type', 'x', 'y', 'angle', 'half_w', 'half_d',
-                 '_cos', '_sin')
+                 '_cos', '_sin', 'lootable', 'looted', 'car_loot', 'car_loot_duration')
 
     _next_id = 0
 
@@ -191,6 +284,16 @@ class ObstacleState:
         # Cache rotation for collision checks
         self._cos = math.cos(-angle)
         self._sin = math.sin(-angle)
+        # Car loot
+        self.lootable = obstacle_type in ('car', 'truck')
+        self.looted = False
+        if self.lootable:
+            loot, dur = _roll_loot(CAR_LOOT_TABLE)
+            self.car_loot = loot
+            self.car_loot_duration = dur
+        else:
+            self.car_loot = None
+            self.car_loot_duration = 0
 
     def point_collides(self, px, py, radius=0.0):
         """Check if a point (with optional radius) collides with this obstacle."""
@@ -241,7 +344,7 @@ class ObstacleState:
         return nx, ny, True
 
     def to_dict(self):
-        return {
+        d = {
             'id': self.id,
             'type': self.obstacle_type,
             'x': round(self.x, 2),
@@ -250,6 +353,10 @@ class ObstacleState:
             'hw': self.half_w,
             'hd': self.half_d,
         }
+        if self.lootable:
+            d['lootable'] = True
+            d['looted'] = self.looted
+        return d
 
 
 class ProjectileState:
@@ -280,6 +387,9 @@ class PlayerState:
         'score', 'zombie_kills', 'deaths', 'shots_fired', 'shots_hit',
         'sprinting', '_last_shot_time',
         'stamina', '_stamina_regen_timer',
+        'unlocked_weapons', 'weapon_ammo_reserve',
+        'action_holding', 'action_progress', 'action_target_id', 'action_target_type', 'action_duration',
+        'extracted',
     )
 
     def __init__(self, player_id, display_name='Player'):
@@ -314,6 +424,17 @@ class PlayerState:
         self._stamina_regen_timer = 0.0
         # Anti-cheat
         self._last_shot_time = 0.0
+        # Weapon progression
+        self.unlocked_weapons = {'pistol'}
+        self.weapon_ammo_reserve = {'pistol': -1, 'rifle': 0, 'uzi': 0, 'shotgun': 0}  # -1 = infinite
+        # Action / interaction
+        self.action_holding = False
+        self.action_progress = 0.0
+        self.action_target_id = None
+        self.action_target_type = None
+        self.action_duration = 0.0
+        # Extraction
+        self.extracted = False
 
     def to_dict(self):
         return {
@@ -331,6 +452,12 @@ class PlayerState:
             'score': self.score,
             'kills': self.zombie_kills,
             'stamina': round(self.stamina, 1),
+            'unlockedWeapons': list(self.unlocked_weapons),
+            'ammoReserve': dict(self.weapon_ammo_reserve),
+            'actionProgress': round(self.action_progress, 2),
+            'actionDuration': round(self.action_duration, 2),
+            'actionTargetType': self.action_target_type,
+            'extracted': self.extracted,
         }
 
 
@@ -351,7 +478,11 @@ class GameRoom:
         self.last_tick = time.time()
         self.obstacles = []
         self.ground_patches = []
+        self.extraction_zones = []
+        self.chests = []
+        self._prev_wave_active = False
         self._generate_obstacles()
+        self._generate_extraction_zones()
 
     def add_player(self, player_id, display_name='Player'):
         state = PlayerState(player_id, display_name)
@@ -443,10 +574,22 @@ class GameRoom:
             return
         if player.ammo >= player.mag_size:
             return
+        # Can't reload when fully exhausted
+        if player.stamina <= 0:
+            return
+        # Can't reload if no ammo in reserve (except infinite)
+        reserve = player.weapon_ammo_reserve.get(player.weapon_id, 0)
+        if reserve == 0:
+            return
 
         weapon = WEAPONS[player.weapon_id]
+        # Low stamina makes reloading slower (up to 2.5x at stamina near 0)
+        if player.stamina < EXHAUSTION_THRESHOLD:
+            reload_mult = 1.0 + 1.5 * (1.0 - player.stamina / EXHAUSTION_THRESHOLD)
+        else:
+            reload_mult = 1.0
         player.reloading = True
-        player.reload_timer = weapon['reload_time']
+        player.reload_timer = weapon['reload_time'] * reload_mult
 
     def process_switch_weapon(self, player_id, weapon_id):
         if weapon_id not in VALID_WEAPON_IDS:
@@ -458,14 +601,31 @@ class GameRoom:
             return
         if player.weapon_id == weapon_id:
             return
+        # Must have unlocked weapon
+        if weapon_id not in player.unlocked_weapons:
+            return
 
         player.weapon_id = weapon_id
         weapon = WEAPONS[weapon_id]
-        player.ammo = weapon['magazine']
+        # Load magazine from reserve
+        reserve = player.weapon_ammo_reserve.get(weapon_id, 0)
+        if reserve == -1:
+            # Infinite ammo (pistol)
+            player.ammo = weapon['magazine']
+        else:
+            give = min(reserve, weapon['magazine'])
+            player.ammo = give
+            player.weapon_ammo_reserve[weapon_id] = reserve - give
         player.mag_size = weapon['magazine']
         player.fire_cooldown = 0.0
         player.reload_timer = 0.0
         player.reloading = False
+
+    def process_action_hold(self, player_id, holding):
+        player = self.players.get(player_id)
+        if not player or not player.alive:
+            return
+        player.action_holding = bool(holding)
 
     def _generate_obstacles(self):
         half = WORLD_SIZE / 2
@@ -501,7 +661,7 @@ class GameRoom:
                 info = OBSTACLE_TYPES[btype]
                 hw, hd = info['half_w'], info['half_d']
 
-                if i == 0:
+                if i == 0 or not placed:
                     bx, by = cx, cy
                 else:
                     # Place adjacent to a random previously placed building
@@ -616,6 +776,240 @@ class GameRoom:
             x, y, _ = obs.push_out(x, y, radius)
         return x, y
 
+    def _generate_extraction_zones(self):
+        """Generate 2 extraction zones far from center and far apart."""
+        half = WORLD_SIZE / 2
+        zones = []
+        for _ in range(200):
+            if len(zones) >= 2:
+                break
+            x = random.uniform(-half + 12, half - 12)
+            y = random.uniform(-half + 12, half - 12)
+            dist_from_center = math.sqrt(x * x + y * y)
+            if dist_from_center < 50:
+                continue
+            # Check distance from other zones
+            too_close = False
+            for z in zones:
+                dz = math.sqrt((x - z.x) ** 2 + (y - z.y) ** 2)
+                if dz < 40:
+                    too_close = True
+                    break
+            if too_close:
+                continue
+            # Check not overlapping obstacles
+            blocked = False
+            for obs in self.obstacles:
+                if obs.point_collides(x, y, EXTRACTION_ZONE_RADIUS):
+                    blocked = True
+                    break
+            if blocked:
+                continue
+            zones.append(ExtractionZone(x, y))
+        self.extraction_zones = zones
+
+    def _spawn_wave_chests(self):
+        """Spawn 4-6 chests near buildings at wave start."""
+        buildings = [o for o in self.obstacles if o.obstacle_type.startswith('building')]
+        if not buildings:
+            return
+        num_chests = random.randint(4, 6)
+        for _ in range(num_chests):
+            building = random.choice(buildings)
+            # Spawn near building edge
+            offset_angle = random.uniform(0, math.pi * 2)
+            dist = building.half_w + random.uniform(2, 5)
+            cx = building.x + math.cos(offset_angle) * dist
+            cy = building.y + math.sin(offset_angle) * dist
+            half = WORLD_SIZE / 2
+            cx = max(-half + 2, min(half - 2, cx))
+            cy = max(-half + 2, min(half - 2, cy))
+            # Don't place inside obstacles
+            blocked = False
+            for obs in self.obstacles:
+                if obs.point_collides(cx, cy, 1.0):
+                    blocked = True
+                    break
+            if blocked:
+                continue
+            self.chests.append(LootChest(cx, cy))
+
+    def _find_nearest_interactable(self, player):
+        """Find nearest interactable for player. Returns (type, id, duration) or None."""
+        px, py = player.x, player.y
+
+        # Check extraction zones
+        for zone in self.extraction_zones:
+            if zone.contains(px, py):
+                return ('extraction_zone', zone.id, EXTRACTION_HOLD_DURATION)
+
+        # Check chests
+        best_chest = None
+        best_dist = CHEST_INTERACT_RADIUS * CHEST_INTERACT_RADIUS
+        for chest in self.chests:
+            if chest.opened:
+                continue
+            dx = px - chest.x
+            dy = py - chest.y
+            d2 = dx * dx + dy * dy
+            if d2 < best_dist:
+                best_dist = d2
+                best_chest = chest
+        if best_chest:
+            return ('chest', best_chest.id, best_chest.hold_duration)
+
+        # Check lootable cars
+        best_car = None
+        best_dist = CAR_INTERACT_RADIUS * CAR_INTERACT_RADIUS
+        for obs in self.obstacles:
+            if not obs.lootable or obs.looted:
+                continue
+            dx = px - obs.x
+            dy = py - obs.y
+            d2 = dx * dx + dy * dy
+            if d2 < best_dist:
+                best_dist = d2
+                best_car = obs
+        if best_car:
+            return ('car', best_car.id, best_car.car_loot_duration)
+
+        return None
+
+    def _give_loot(self, player, loot):
+        """Apply loot dict to player. Returns list of events to emit."""
+        events = []
+        ltype = loot['type']
+        if ltype == 'weapon_unlock':
+            wid = loot['weapon_id']
+            if wid not in player.unlocked_weapons:
+                player.unlocked_weapons.add(wid)
+                # Give starting ammo
+                starting = WEAPONS[wid]['magazine'] * 2
+                player.weapon_ammo_reserve[wid] = player.weapon_ammo_reserve.get(wid, 0) + starting
+                events.append({
+                    'type': 'weapon_unlock',
+                    'pid': player.player_id,
+                    'weapon': wid,
+                })
+            else:
+                # Already unlocked, give ammo instead
+                player.weapon_ammo_reserve[wid] = player.weapon_ammo_reserve.get(wid, 0) + WEAPONS[wid]['magazine']
+                events.append({
+                    'type': 'ammo_pickup',
+                    'pid': player.player_id,
+                    'weapon': wid,
+                    'amount': WEAPONS[wid]['magazine'],
+                })
+        elif ltype == 'ammo':
+            wid = loot['weapon_id']
+            amount = loot['amount']
+            player.weapon_ammo_reserve[wid] = player.weapon_ammo_reserve.get(wid, 0) + amount
+            events.append({
+                'type': 'ammo_pickup',
+                'pid': player.player_id,
+                'weapon': wid,
+                'amount': amount,
+            })
+        elif ltype == 'health':
+            amount = loot['amount']
+            player.health = min(PLAYER_MAX_HEALTH, player.health + amount)
+            events.append({
+                'type': 'health_pickup',
+                'pid': player.player_id,
+                'amount': amount,
+            })
+        elif ltype == 'score':
+            amount = loot['amount']
+            player.score += amount
+            events.append({
+                'type': 'score_pickup',
+                'pid': player.player_id,
+                'amount': amount,
+            })
+        return events
+
+    def _update_actions(self, dt):
+        """Update hold-to-interact actions for all players."""
+        for player in self.players.values():
+            if not player.alive or player.extracted:
+                continue
+
+            is_moving = player.vx != 0 or player.vy != 0
+
+            if not player.action_holding or is_moving:
+                # Reset action progress
+                if player.action_progress > 0:
+                    player.action_progress = 0.0
+                    player.action_target_id = None
+                    player.action_target_type = None
+                    player.action_duration = 0.0
+                continue
+
+            # Find nearest interactable
+            result = self._find_nearest_interactable(player)
+            if not result:
+                player.action_progress = 0.0
+                player.action_target_id = None
+                player.action_target_type = None
+                player.action_duration = 0.0
+                continue
+
+            target_type, target_id, duration = result
+
+            # If target changed, reset progress
+            if player.action_target_id != target_id or player.action_target_type != target_type:
+                player.action_progress = 0.0
+                player.action_target_id = target_id
+                player.action_target_type = target_type
+                player.action_duration = duration
+
+            # Advance progress
+            player.action_progress += dt
+
+            # Completion
+            if player.action_progress >= duration:
+                player.action_progress = 0.0
+                player.action_target_id = None
+                player.action_target_type = None
+                player.action_duration = 0.0
+                player.action_holding = False
+
+                if target_type == 'extraction_zone':
+                    player.extracted = True
+                    player.alive = False
+                    self.events.append({
+                        'type': 'extracted',
+                        'pid': player.player_id,
+                        'score': player.score,
+                        'name': player.display_name,
+                    })
+                elif target_type == 'chest':
+                    for chest in self.chests:
+                        if chest.id == target_id and not chest.opened:
+                            chest.opened = True
+                            loot_events = self._give_loot(player, chest.loot)
+                            self.events.extend(loot_events)
+                            self.events.append({
+                                'type': 'chest_opened',
+                                'pid': player.player_id,
+                                'chestId': chest.id,
+                                'loot': chest.loot['type'],
+                            })
+                            break
+                elif target_type == 'car':
+                    for obs in self.obstacles:
+                        if obs.id == target_id and obs.lootable and not obs.looted:
+                            obs.looted = True
+                            loot_events = self._give_loot(player, obs.car_loot)
+                            self.events.extend(loot_events)
+                            self.events.append({
+                                'type': 'car_looted',
+                                'pid': player.player_id,
+                                'obsId': obs.id,
+                                'loot': obs.car_loot['type'],
+                            })
+                            break
+
     def _projectile_hits_obstacle(self, px, py):
         """Check if a projectile point is inside any obstacle."""
         for obs in self.obstacles:
@@ -649,16 +1043,21 @@ class GameRoom:
             return
 
         alive_players = [p for p in self.players.values() if p.alive]
+        extracted_players = [p for p in self.players.values() if p.extracted]
 
         # --- Game over detection ---
-        if self.players and not alive_players and self.wave_spawner.wave > 0:
+        # Exclude extracted players from "all dead" check
+        non_extracted = [p for p in self.players.values() if not p.extracted]
+        alive_non_extracted = [p for p in non_extracted if p.alive]
+        if non_extracted and not alive_non_extracted and self.wave_spawner.wave > 0:
             self._all_dead_timer += dt
             if self._all_dead_timer >= GAME_OVER_DEAD_TIME:
                 self.game_over = True
                 elapsed = time.time() - self.start_time
                 # Wave survival bonus
                 for p in self.players.values():
-                    p.score += self.wave_spawner.wave * 50
+                    if not p.extracted:
+                        p.score += self.wave_spawner.wave * 50
                 self.events.append({
                     'type': 'game_over',
                     'wave': self.wave_spawner.wave,
@@ -667,10 +1066,11 @@ class GameRoom:
                         {
                             'id': p.player_id,
                             'name': p.display_name,
-                            'score': p.score,
+                            'score': p.score if p.extracted else 0,
                             'kills': p.zombie_kills,
                             'deaths': p.deaths,
                             'accuracy': round(p.shots_hit / max(p.shots_fired, 1) * 100),
+                            'extracted': p.extracted,
                         }
                         for p in self.players.values()
                     ],
@@ -679,9 +1079,14 @@ class GameRoom:
         else:
             self._all_dead_timer = 0.0
 
+        # --- Update actions (hold-to-interact) ---
+        self._update_actions(dt)
+
         # Update players
         for player in self.players.values():
             if not player.alive:
+                if player.extracted:
+                    continue  # Extracted players don't respawn
                 player.respawn_timer -= dt
                 if player.respawn_timer <= 0:
                     player.alive = True
@@ -689,9 +1094,17 @@ class GameRoom:
                     player.stamina = MAX_STAMINA
                     player.x = random.uniform(-10, 10)
                     player.y = random.uniform(-10, 10)
-                    weapon = WEAPONS[player.weapon_id]
+                    # Respawn with pistol
+                    player.weapon_id = 'pistol'
+                    weapon = WEAPONS['pistol']
                     player.ammo = weapon['magazine']
+                    player.mag_size = weapon['magazine']
                     player.reloading = False
+                    player.action_holding = False
+                    player.action_progress = 0.0
+                    player.action_target_id = None
+                    player.action_target_type = None
+                    player.action_duration = 0.0
                     self.events.append({'type': 'respawn', 'pid': player.player_id})
                 continue
 
@@ -741,7 +1154,15 @@ class GameRoom:
                 player.reload_timer -= dt
                 if player.reload_timer <= 0:
                     player.reloading = False
-                    player.ammo = player.mag_size
+                    reserve = player.weapon_ammo_reserve.get(player.weapon_id, 0)
+                    if reserve == -1:
+                        # Infinite ammo (pistol)
+                        player.ammo = player.mag_size
+                    else:
+                        need = player.mag_size - player.ammo
+                        give = min(need, reserve)
+                        player.ammo += give
+                        player.weapon_ammo_reserve[player.weapon_id] = reserve - give
 
         # --- Wave spawning ---
         alive_zombie_count = sum(1 for z in self.zombies if z.alive)
@@ -750,12 +1171,18 @@ class GameRoom:
             zombie = ZombieState(ztype, zx, zy)
             self.zombies.append(zombie)
 
-        # Emit wave_start event
+        # Emit wave_start event and spawn chests
         if spawns and self.wave_spawner.total_spawned == len(spawns):
             self.events.append({
                 'type': 'wave_start',
                 'wave': self.wave_spawner.wave,
             })
+            self._spawn_wave_chests()
+
+        # Clear unopened chests when wave ends
+        if self._prev_wave_active and not self.wave_spawner.wave_active:
+            self.chests = [c for c in self.chests if c.opened]
+        self._prev_wave_active = self.wave_spawner.wave_active
 
         # --- Update zombies (AI: chase nearest player) ---
         for zombie in self.zombies:
@@ -880,8 +1307,13 @@ class GameRoom:
                         })
                         # Item drop
                         if random.random() < ITEM_DROP_CHANCE:
-                            itype = random.choice(['health', 'ammo'])
-                            self.items.append(ItemDrop(itype, zombie.x, zombie.y))
+                            if random.random() < 0.3:
+                                # Health drop
+                                self.items.append(ItemDrop('health', zombie.x, zombie.y))
+                            else:
+                                # Typed ammo drop
+                                wid = random.choice(['pistol', 'rifle', 'uzi', 'shotgun'])
+                                self.items.append(ItemDrop('ammo', zombie.x, zombie.y, weapon_id=wid))
                     hit = True
                     break
 
@@ -940,7 +1372,14 @@ class GameRoom:
                         player.health = min(PLAYER_MAX_HEALTH, player.health + idef['heal'])
                         picked = True
                     elif item.item_type == 'ammo':
-                        player.ammo = min(player.mag_size, player.ammo + idef['ammo'])
+                        wid = item.weapon_id or player.weapon_id
+                        amount = idef['ammo']
+                        reserve = player.weapon_ammo_reserve.get(wid, 0)
+                        if reserve == -1:
+                            # Pistol infinite — add to current mag
+                            player.ammo = min(player.mag_size, player.ammo + amount)
+                        else:
+                            player.weapon_ammo_reserve[wid] = reserve + amount
                         picked = True
                     if picked:
                         player.score += 5
@@ -948,6 +1387,8 @@ class GameRoom:
                             'type': 'item_pickup',
                             'pid': player.player_id,
                             'item': item.item_type,
+                            'weapon': item.weapon_id,
+                            'amount': idef.get('ammo', idef.get('heal', 0)),
                         })
                         break
 
@@ -991,6 +1432,8 @@ class GameRoom:
             'items': [i.to_dict() for i in self.items],
             'obstacles': [o.to_dict() for o in self.obstacles],
             'ground': [g.to_dict() for g in self.ground_patches],
+            'extractionZones': [z.to_dict() for z in self.extraction_zones],
+            'chests': [c.to_dict() for c in self.chests if not c.opened],
             'wave': self.wave_spawner.wave,
             'waveActive': self.wave_spawner.wave_active,
             'gameOver': self.game_over,

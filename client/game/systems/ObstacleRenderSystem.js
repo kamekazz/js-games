@@ -8,7 +8,9 @@ export class ObstacleRenderSystem extends System {
   constructor(renderer) {
     super(96);
     this.renderer = renderer;
-    this.meshes = [];
+    this.meshes = [];           // array for backwards compat with destroy
+    this.meshById = new Map();  // obs.id -> group
+    this._lootIndicators = new Map(); // obs.id -> indicator mesh
     this.groundMeshes = [];
     this._created = false;
     this._groundCreated = false;
@@ -40,7 +42,49 @@ export class ObstacleRenderSystem extends System {
       group.rotation.y = obs.angle;
       this.renderer.add(group);
       this.meshes.push(group);
+      this.meshById.set(obs.id, group);
+
+      // Add loot indicator for lootable cars/trucks
+      if (obs.lootable && !obs.looted) {
+        const indicator = this._createLootIndicator();
+        indicator.position.set(obs.x, 3.0, -obs.y);
+        this.renderer.add(indicator);
+        this._lootIndicators.set(obs.id, indicator);
+      }
     }
+  }
+
+  markCarLooted(obsId) {
+    // Remove loot indicator
+    const indicator = this._lootIndicators.get(obsId);
+    if (indicator) {
+      this.renderer.remove(indicator);
+      this._lootIndicators.delete(obsId);
+    }
+    // Darken car materials
+    const group = this.meshById.get(obsId);
+    if (group) {
+      group.traverse((child) => {
+        if (child.material) {
+          child.material.color.multiplyScalar(0.5);
+        }
+      });
+    }
+  }
+
+  _createLootIndicator() {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xddaa22,
+      emissive: 0xddaa22,
+      emissiveIntensity: 0.6,
+      transparent: true,
+      opacity: 0.8,
+    });
+    const diamond = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.3, 0),
+      mat
+    );
+    return diamond;
   }
 
   setGround(patches) {
@@ -294,6 +338,11 @@ export class ObstacleRenderSystem extends System {
   }
 
   update(dt) {
-    // Static — driven by setObstacles() from NetworkSyncSystem
+    this._time = (this._time || 0) + dt;
+    // Animate loot indicators
+    for (const [, indicator] of this._lootIndicators) {
+      indicator.position.y = 3.0 + Math.sin(this._time * 3) * 0.3;
+      indicator.rotation.y = this._time * 2;
+    }
   }
 }
