@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Results screen', () => {
   const mockData = {
-    wave: 5,
+    night: 5,
     elapsed: 185,
     scores: [
       { name: 'Alice', score: 1200, kills: 30, deaths: 2, accuracy: 65, extracted: true },
@@ -22,7 +22,7 @@ test.describe('Results screen', () => {
 
     // Verify the results overlay rendered
     await expect(page.locator('text=GAME OVER')).toBeVisible();
-    await expect(page.locator('text=Wave 5')).toBeVisible();
+    await expect(page.locator('text=Night 5')).toBeVisible();
     await expect(page.locator('text=3:05')).toBeVisible();
 
     // Check extraction statuses

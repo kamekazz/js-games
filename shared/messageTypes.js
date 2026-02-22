@@ -15,5 +15,6 @@ export const MessageTypes = {
   GAME_START: 'game_start',
   GAME_OVER: 'game_over',
   HIT_CONFIRM: 'hit_confirm',
-  WAVE_START: 'wave_start',
+  NIGHT_START: 'night_start',
+  DAWN: 'dawn',
 };

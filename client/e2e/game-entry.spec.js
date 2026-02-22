@@ -18,8 +18,8 @@ test.describe('Game entry', () => {
     await expect(page.locator(HUD.ammo)).toHaveText('8 / 8');
   });
 
-  test('wave 1 starts', async ({ gamePage: page }) => {
-    await expect(page.locator(HUD.wave)).toContainText('Wave 1', { timeout: 30_000 });
+  test('night 1 starts', async ({ gamePage: page }) => {
+    await expect(page.locator(HUD.night)).toContainText('Night 1', { timeout: 30_000 });
   });
 
   test('canvas is rendered', async ({ gamePage: page }) => {

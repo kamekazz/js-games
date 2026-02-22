@@ -34,6 +34,7 @@ export class Engine {
 
     this.input.tick();
     this.world.update(dt);
+    this.renderer.updateLighting(dt);
     this.renderer.render();
   }
 }

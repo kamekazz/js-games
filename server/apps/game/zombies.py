@@ -1,5 +1,5 @@
 """
-Zombie AI and wave spawning system.
+Zombie AI and night-cycle spawning system.
 All zombie state is managed server-side and broadcast to clients via game_state.
 """
 import math
@@ -33,6 +33,12 @@ ZOMBIE_TYPES = {
     },
 }
 
+# Night cycle constants
+NIGHT_DURATION = 720.0    # 12 minutes per night
+DAWN_DURATION = 45.0      # 45 second dawn break
+INITIAL_DELAY = 5.0       # seconds before Night 1
+BLOOD_MOON_INTERVAL = 5   # every 5th night
+
 
 class ZombieState:
     __slots__ = (
@@ -44,7 +50,7 @@ class ZombieState:
 
     _next_id = 0
 
-    def __init__(self, zombie_type, x, y):
+    def __init__(self, zombie_type, x, y, stat_mults=None):
         ZombieState._next_id += 1
         self.id = ZombieState._next_id
         self.zombie_type = zombie_type
@@ -53,10 +59,18 @@ class ZombieState:
         self.angle = 0.0
 
         ztype = ZOMBIE_TYPES[zombie_type]
-        self.health = ztype['health']
-        self.max_health = ztype['health']
-        self.speed = ztype['speed']
-        self.damage = ztype['damage']
+        hp_mult = 1.0
+        spd_mult = 1.0
+        dmg_mult = 1.0
+        if stat_mults:
+            hp_mult = stat_mults.get('hp', 1.0)
+            spd_mult = stat_mults.get('speed', 1.0)
+            dmg_mult = stat_mults.get('damage', 1.0)
+
+        self.health = round(ztype['health'] * hp_mult)
+        self.max_health = self.health
+        self.speed = ztype['speed'] * spd_mult
+        self.damage = round(ztype['damage'] * dmg_mult)
         self.attack_cooldown = ztype['attack_cooldown']
         self.attack_timer = 0.0
         self.size = ztype['size']
@@ -76,37 +90,69 @@ class ZombieState:
         }
 
 
-class WaveSpawner:
-    """Manages wave-based zombie spawning."""
+class NightCycleSpawner:
+    """Manages continuous night-cycle zombie spawning with escalating difficulty."""
 
     def __init__(self, world_size):
         self.world_size = world_size
-        self.wave = 0
-        self.zombies_to_spawn = 0
+        self.night = 0
+        self.night_active = False
+        self.night_elapsed = 0.0
+        self.dawn_timer = 0.0
         self.spawn_timer = 0.0
-        self.spawn_interval = 0.8   # seconds between spawns
-        self.wave_delay = 5.0       # seconds between waves
-        self.wave_timer = 3.0       # initial delay before first wave
-        self.wave_active = False
-        self.total_spawned = 0
-        self.max_alive = 30         # cap on concurrent zombies
+        self.is_blood_moon = False
+        self.total_spawned_this_night = 0
+        self._initial_timer = INITIAL_DELAY
+        self._started = False  # True after first night begins
+        self._night_ended = False  # True during dawn
 
-    def get_wave_config(self, wave_num):
-        """Returns (total_zombies, zombie_type_weights) for a wave."""
-        base_count = 5 + wave_num * 3
-        total = min(base_count, 50)
+    def _get_base_interval(self):
+        return max(0.25, 2.0 - (self.night - 1) * 0.06)
 
-        # Progressively introduce tougher types
-        if wave_num <= 2:
-            weights = [('walker', 1.0)]
-        elif wave_num <= 5:
-            weights = [('walker', 0.7), ('runner', 0.3)]
-        elif wave_num <= 8:
-            weights = [('walker', 0.5), ('runner', 0.35), ('tank', 0.15)]
+    def _get_effective_interval(self):
+        base = self._get_base_interval()
+        # Within-night acceleration: shrinks by 30% from start to end
+        progress = min(self.night_elapsed / NIGHT_DURATION, 1.0)
+        accel = 1.0 - 0.3 * progress
+        interval = base * accel
+        # Blood moon: 40% faster spawns
+        if self.is_blood_moon:
+            interval *= 0.6
+        return max(0.15, interval)
+
+    def _get_max_alive(self):
+        base = 15 + self.night * 3
+        if self.is_blood_moon:
+            base += 15
+        return min(base, 80)
+
+    def _get_type_weights(self):
+        n = self.night
+        if n <= 2:
+            return [('walker', 1.0)]
+        elif n <= 4:
+            return [('walker', 0.7), ('runner', 0.3)]
+        elif n <= 7:
+            return [('walker', 0.55), ('runner', 0.35), ('tank', 0.10)]
+        elif n <= 12:
+            return [('walker', 0.40), ('runner', 0.35), ('tank', 0.25)]
+        elif n <= 20:
+            return [('walker', 0.30), ('runner', 0.40), ('tank', 0.30)]
         else:
-            weights = [('walker', 0.4), ('runner', 0.35), ('tank', 0.25)]
+            return [('walker', 0.25), ('runner', 0.40), ('tank', 0.35)]
 
-        return total, weights
+    def _get_stat_multipliers(self):
+        n = self.night
+        hp = 1.0 if n <= 10 else 1.0 + (n - 10) * 0.05
+        dmg = 1.0 if n <= 15 else 1.0 + (n - 15) * 0.03
+        spd = 1.0 if n <= 20 else 1.0 + (n - 20) * 0.02
+        return {'hp': hp, 'damage': dmg, 'speed': spd}
+
+    def _get_chest_count(self):
+        count = min(4 + self.night // 3, 10)
+        if self.is_blood_moon:
+            count += 2
+        return count
 
     def pick_zombie_type(self, weights):
         r = random.random()
@@ -138,38 +184,62 @@ class WaveSpawner:
         return x, y
 
     def update(self, dt, alive_zombie_count, alive_players):
-        """Returns list of (zombie_type, x, y) to spawn this tick."""
+        """Returns (spawns_list, event_string_or_none).
+        spawns_list entries: (ztype, x, y, stat_mults)
+        event: 'night_start', 'dawn', or None
+        """
         spawns = []
+        event = None
 
-        if not self.wave_active:
-            self.wave_timer -= dt
-            if self.wave_timer <= 0 and alive_players:
-                # Start new wave
-                self.wave += 1
-                total, self._wave_weights = self.get_wave_config(self.wave)
-                self.zombies_to_spawn = total
-                self.total_spawned = 0
-                self.wave_active = True
-                self.spawn_timer = 0.0
-                # Speed up spawning in later waves
-                self.spawn_interval = max(0.3, 0.8 - self.wave * 0.05)
-            return spawns
+        # --- Initial delay before first night ---
+        if not self._started:
+            self._initial_timer -= dt
+            if self._initial_timer <= 0 and alive_players:
+                self._start_night()
+                event = 'night_start'
+            return spawns, event
 
-        if self.zombies_to_spawn <= 0:
-            # Wave complete when all spawned zombies are dead
-            if alive_zombie_count == 0:
-                self.wave_active = False
-                self.wave_timer = self.wave_delay
-            return spawns
+        # --- Dawn state ---
+        if self._night_ended:
+            self.dawn_timer -= dt
+            if self.dawn_timer <= 0:
+                self._start_night()
+                event = 'night_start'
+            return spawns, event
 
-        # Spawn zombies at intervals
-        self.spawn_timer -= dt
-        if self.spawn_timer <= 0 and alive_zombie_count < self.max_alive:
-            ztype = self.pick_zombie_type(self._wave_weights)
-            x, y = self.get_spawn_position(alive_players)
-            spawns.append((ztype, x, y))
-            self.zombies_to_spawn -= 1
-            self.total_spawned += 1
-            self.spawn_timer = self.spawn_interval
+        # --- Night active: spawn zombies ---
+        if self.night_active:
+            self.night_elapsed += dt
+            self.spawn_timer -= dt
 
-        return spawns
+            max_alive = self._get_max_alive()
+            weights = self._get_type_weights()
+            stat_mults = self._get_stat_multipliers()
+
+            # Spawn loop: allow multiple spawns per tick at fast rates
+            while self.spawn_timer <= 0 and alive_zombie_count < max_alive and alive_players:
+                ztype = self.pick_zombie_type(weights)
+                x, y = self.get_spawn_position(alive_players)
+                spawns.append((ztype, x, y, stat_mults))
+                self.total_spawned_this_night += 1
+                alive_zombie_count += 1
+                self.spawn_timer += self._get_effective_interval()
+
+            # End night after duration
+            if self.night_elapsed >= NIGHT_DURATION:
+                self.night_active = False
+                self._night_ended = True
+                self.dawn_timer = DAWN_DURATION
+                event = 'dawn'
+
+        return spawns, event
+
+    def _start_night(self):
+        self.night += 1
+        self.night_active = True
+        self._night_ended = False
+        self._started = True
+        self.night_elapsed = 0.0
+        self.total_spawned_this_night = 0
+        self.is_blood_moon = (self.night % BLOOD_MOON_INTERVAL == 0)
+        self.spawn_timer = 0.0

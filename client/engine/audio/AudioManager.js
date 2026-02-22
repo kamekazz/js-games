@@ -256,28 +256,61 @@ export class AudioManager {
   }
 
   /**
-   * Wave start — alarm horn
+   * Night start — low ominous horn
    */
-  playWaveStart() {
+  playNightStart() {
     if (!this._ctx) return;
     const ctx = this._ctx;
     const t = ctx.currentTime;
 
     for (let i = 0; i < 3; i++) {
-      const start = t + i * 0.2;
+      const start = t + i * 0.25;
       const osc = ctx.createOscillator();
       osc.type = 'square';
-      osc.frequency.setValueAtTime(440, start);
-      osc.frequency.setValueAtTime(550, start + 0.08);
+      osc.frequency.setValueAtTime(330, start);
+      osc.frequency.setValueAtTime(440, start + 0.1);
 
       const gain = ctx.createGain();
       gain.gain.setValueAtTime(0.15, start);
-      gain.gain.exponentialRampToValueAtTime(0.01, start + 0.15);
+      gain.gain.exponentialRampToValueAtTime(0.01, start + 0.2);
 
       osc.connect(gain).connect(this._masterGain);
       osc.start(start);
-      osc.stop(start + 0.15);
+      osc.stop(start + 0.2);
     }
+  }
+
+  /**
+   * Dawn — rising bright two-tone
+   */
+  playDawn() {
+    if (!this._ctx) return;
+    const ctx = this._ctx;
+    const t = ctx.currentTime;
+
+    // First rising tone
+    const osc1 = ctx.createOscillator();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(400, t);
+    osc1.frequency.exponentialRampToValueAtTime(800, t + 0.3);
+    const g1 = ctx.createGain();
+    g1.gain.setValueAtTime(0.15, t);
+    g1.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+    osc1.connect(g1).connect(this._masterGain);
+    osc1.start(t);
+    osc1.stop(t + 0.4);
+
+    // Second rising tone
+    const osc2 = ctx.createOscillator();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(600, t + 0.2);
+    osc2.frequency.exponentialRampToValueAtTime(1000, t + 0.5);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.12, t + 0.2);
+    g2.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+    osc2.connect(g2).connect(this._masterGain);
+    osc2.start(t + 0.2);
+    osc2.stop(t + 0.6);
   }
 
   destroy() {

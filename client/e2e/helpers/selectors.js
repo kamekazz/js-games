@@ -29,7 +29,7 @@ export const HUD = {
   ammoReserve: '#hud-ammo-reserve',
   reloadHint: '#hud-reload-hint',
   weaponHints: '#hud-weapon-hints',
-  wave: '#hud-wave',
+  night: '#hud-night',
   kills: '#hud-kills',
   score: '#hud-score',
   actionContainer: '#hud-action-container',
