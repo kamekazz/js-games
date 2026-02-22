@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { System } from '@engine/ecs/System.js';
+import { disposeObject3D } from '@engine/rendering/dispose.js';
 
 const CAR_COLORS = [0xaa3333, 0x3355aa, 0xeeeeee, 0x222222, 0x33aa55];
 const BUILDING_COLORS = [0x667777, 0x886655, 0x998877, 0x777788, 0x6a6a6a];
@@ -12,44 +13,47 @@ export class ObstacleRenderSystem extends System {
     this.meshById = new Map();  // obs.id -> group
     this._lootIndicators = new Map(); // obs.id -> indicator mesh
     this.groundMeshes = [];
-    this._created = false;
     this._groundCreated = false;
   }
 
   setObstacles(obstacles) {
-    if (this._created) return;
-    this._created = true;
-
     for (const obs of obstacles) {
-      let group;
-      if (obs.type === 'building_sm') {
-        group = this._createBuilding(obs.hw * 2, obs.hd * 2, 5);
-      } else if (obs.type === 'building_md') {
-        group = this._createBuilding(obs.hw * 2, obs.hd * 2, 6.5);
-      } else if (obs.type === 'building_lg') {
-        group = this._createBuilding(obs.hw * 2, obs.hd * 2, 8);
-      } else if (obs.type === 'car') {
-        group = this._createCar(obs.hw * 2, obs.hd * 2);
-      } else if (obs.type === 'truck') {
-        group = this._createTruck(obs.hw * 2, obs.hd * 2);
-      } else if (obs.type === 'barrier') {
-        group = this._createBarrier(obs.hw * 2, obs.hd * 2);
-      } else {
-        group = this._createCrate(obs.hw * 2, obs.hd * 2);
-      }
+      // Skip already-rendered obstacles (idempotent)
+      if (this.meshById.has(obs.id)) continue;
 
-      group.position.set(obs.x, 0, -obs.y);
-      group.rotation.y = obs.angle;
-      this.renderer.add(group);
-      this.meshes.push(group);
-      this.meshById.set(obs.id, group);
+      try {
+        let group;
+        if (obs.type === 'building_sm') {
+          group = this._createBuilding(obs.hw * 2, obs.hd * 2, 5);
+        } else if (obs.type === 'building_md') {
+          group = this._createBuilding(obs.hw * 2, obs.hd * 2, 6.5);
+        } else if (obs.type === 'building_lg') {
+          group = this._createBuilding(obs.hw * 2, obs.hd * 2, 8);
+        } else if (obs.type === 'car') {
+          group = this._createCar(obs.hw * 2, obs.hd * 2);
+        } else if (obs.type === 'truck') {
+          group = this._createTruck(obs.hw * 2, obs.hd * 2);
+        } else if (obs.type === 'barrier') {
+          group = this._createBarrier(obs.hw * 2, obs.hd * 2);
+        } else {
+          group = this._createCrate(obs.hw * 2, obs.hd * 2);
+        }
 
-      // Add loot indicator for lootable cars/trucks
-      if (obs.lootable && !obs.looted) {
-        const indicator = this._createLootIndicator();
-        indicator.position.set(obs.x, 3.0, -obs.y);
-        this.renderer.add(indicator);
-        this._lootIndicators.set(obs.id, indicator);
+        group.position.set(obs.x, 0, -obs.y);
+        group.rotation.y = obs.angle;
+        this.renderer.add(group);
+        this.meshes.push(group);
+        this.meshById.set(obs.id, group);
+
+        // Add loot indicator for lootable cars/trucks
+        if (obs.lootable && !obs.looted) {
+          const indicator = this._createLootIndicator();
+          indicator.position.set(obs.x, 3.0, -obs.y);
+          this.renderer.add(indicator);
+          this._lootIndicators.set(obs.id, indicator);
+        }
+      } catch (e) {
+        console.warn('Failed to create obstacle mesh:', obs.id, e);
       }
     }
   }
@@ -122,14 +126,17 @@ export class ObstacleRenderSystem extends System {
     roofEdge.position.y = height;
     group.add(roofEdge);
 
-    // Windows grid on all 4 sides
+    // Windows grid on all 4 sides using InstancedMesh for performance
     const windowMat = new THREE.MeshStandardMaterial({ color: 0x1a2a3a });
-    const windowW = 0.8;
-    const windowH = 1.0;
-    const windowGeo = new THREE.BoxGeometry(windowW, windowH, 0.06);
+    const windowGeo = new THREE.BoxGeometry(0.8, 1.0, 0.06);
 
     const numCols = Math.max(1, Math.floor(w / 2.5));
     const numRows = Math.max(1, Math.floor((height - 1.5) / 2.0));
+
+    // Collect all window transforms first
+    const transforms = [];
+    const _m = new THREE.Matrix4();
+    const _rot = new THREE.Matrix4();
 
     for (let side = 0; side < 4; side++) {
       const isXSide = side < 2;
@@ -140,19 +147,28 @@ export class ObstacleRenderSystem extends System {
 
       for (let row = 0; row < numRows; row++) {
         for (let col = 0; col < cols; col++) {
-          const win = new THREE.Mesh(windowGeo, windowMat);
           const along = -sideLen / 2 + (sideLen / (cols + 1)) * (col + 1);
           const wy = 1.5 + row * 2.0;
 
           if (isXSide) {
-            win.position.set(along, wy, sign * depthOffset);
+            _m.makeTranslation(along, wy, sign * depthOffset);
           } else {
-            win.rotation.y = Math.PI / 2;
-            win.position.set(sign * depthOffset, wy, along);
+            _rot.makeRotationY(Math.PI / 2);
+            _m.makeTranslation(sign * depthOffset, wy, along);
+            _m.multiply(_rot);
           }
-          group.add(win);
+          transforms.push(_m.clone());
         }
       }
+    }
+
+    if (transforms.length > 0) {
+      const instancedWindows = new THREE.InstancedMesh(windowGeo, windowMat, transforms.length);
+      for (let i = 0; i < transforms.length; i++) {
+        instancedWindows.setMatrixAt(i, transforms[i]);
+      }
+      instancedWindows.instanceMatrix.needsUpdate = true;
+      group.add(instancedWindows);
     }
 
     // Door on front side
@@ -346,5 +362,24 @@ export class ObstacleRenderSystem extends System {
       indicator.position.y = 3.0 + Math.sin(this._time * 3) * 0.3;
       indicator.rotation.y = this._time * 2;
     }
+  }
+
+  destroy() {
+    for (const mesh of this.meshes) {
+      this.renderer.remove(mesh);
+      disposeObject3D(mesh);
+    }
+    this.meshes = [];
+    this.meshById.clear();
+    for (const [, indicator] of this._lootIndicators) {
+      this.renderer.remove(indicator);
+      disposeObject3D(indicator);
+    }
+    this._lootIndicators.clear();
+    for (const mesh of this.groundMeshes) {
+      this.renderer.remove(mesh);
+      disposeObject3D(mesh);
+    }
+    this.groundMeshes = [];
   }
 }

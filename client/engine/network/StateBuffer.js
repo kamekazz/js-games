@@ -5,6 +5,8 @@ export class StateBuffer {
   constructor(interpolationDelay = 100) {
     this.buffer = []; // { time, state }
     this.interpolationDelay = interpolationDelay; // ms behind server
+    this._mapA = new Map();
+    this._mapB = new Map();
   }
 
   push(serverTime, state) {
@@ -44,9 +46,13 @@ export class StateBuffer {
   }
 
   _lerp(stateA, stateB, t) {
-    // Interpolate player positions
-    const playersA = new Map(stateA.players.map(p => [p.id, p]));
-    const playersB = new Map(stateB.players.map(p => [p.id, p]));
+    // Interpolate player positions (reuse Maps to avoid GC pressure)
+    this._mapA.clear();
+    this._mapB.clear();
+    for (const p of stateA.players) this._mapA.set(p.id, p);
+    for (const p of stateB.players) this._mapB.set(p.id, p);
+    const playersA = this._mapA;
+    const playersB = this._mapB;
 
     const players = [];
     for (const [id, b] of playersB) {

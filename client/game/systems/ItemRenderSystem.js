@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { System } from '@engine/ecs/System.js';
+import { disposeObject3D } from '@engine/rendering/dispose.js';
 
 const ITEM_COLORS = {
   health: 0x44cc44,
@@ -69,5 +70,13 @@ export class ItemRenderSystem extends System {
 
   update(dt) {
     this._time += dt;
+  }
+
+  destroy() {
+    for (const [, mesh] of this.meshes) {
+      this.renderer.remove(mesh);
+      disposeObject3D(mesh);
+    }
+    this.meshes.clear();
   }
 }

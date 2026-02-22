@@ -40,7 +40,6 @@ export class NetworkSyncSystem extends System {
     this.weaponHotbar = null;      // set by Game.js
     this.onInteractionAvailableChanged = null; // callback set by Game.js
     this._prevActionAvailable = false;
-    this._obstaclesCreated = false;
     this._groundCreated = false;
     this._extractionZonesCreated = false;
     this._sendInterval = 1000 / 20;
@@ -124,24 +123,18 @@ export class NetworkSyncSystem extends System {
     const state = this.stateBuffer.getInterpolatedState(renderTime);
     if (!state) return;
 
-    // Create obstacle meshes once
-    if (!this._obstaclesCreated && this.obstacleRenderSystem && state.obstacles && state.obstacles.length > 0) {
-      this._obstaclesCreated = true;
-      this.obstacleRenderSystem.setObstacles(state.obstacles);
+    // Create/update obstacle meshes from latest server state (not interpolated).
+    // setObstacles() is idempotent — it skips already-rendered obstacles via meshById.has().
+    if (this.obstacleRenderSystem && this._latestState && this._latestState.obstacles && this._latestState.obstacles.length > 0) {
+      this.obstacleRenderSystem.setObstacles(this._latestState.obstacles);
       // Pass obstacle data for client-side collision prediction
-      if (this.movementSystem) {
-        this.movementSystem.obstacles = state.obstacles;
+      if (this.movementSystem && !this.movementSystem.obstacles) {
+        this.movementSystem.obstacles = this._latestState.obstacles;
       }
-      // Feed obstacles to interaction system
+      // Feed obstacles to interaction system (always update for loot state changes)
       if (this.interactionSystem) {
-        this.interactionSystem.obstacles = state.obstacles;
+        this.interactionSystem.obstacles = this._latestState.obstacles;
       }
-    }
-
-    // Update obstacle loot states from latest server state (not interpolated,
-    // since _lerp only returns players). Mirrors how _updateChests works.
-    if (this._obstaclesCreated && this.interactionSystem && this._latestState && this._latestState.obstacles) {
-      this.interactionSystem.obstacles = this._latestState.obstacles;
     }
 
     // Create ground patches once

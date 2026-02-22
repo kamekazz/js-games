@@ -264,59 +264,21 @@ export class Game {
     if (this._scoreboard) { this._scoreboard.destroy(); this._scoreboard = null; }
     if (this._pauseMenu) { this._pauseMenu.destroy(); this._pauseMenu = null; }
 
-    // Clean up projectile meshes
-    for (const [, mesh] of this._projectileSystem.meshes) {
-      this.engine.renderer.remove(mesh);
-    }
-
-    // Clean up obstacle meshes
-    for (const mesh of this._obstacleRenderSystem.meshes) {
-      this.engine.renderer.remove(mesh);
-    }
-
-    // Clean up ground meshes
-    for (const mesh of this._obstacleRenderSystem.groundMeshes) {
-      this.engine.renderer.remove(mesh);
-    }
-
-    // Clean up obstacle loot indicators
-    for (const [, indicator] of this._obstacleRenderSystem._lootIndicators) {
-      this.engine.renderer.remove(indicator);
-    }
-
-    // Clean up zombie meshes
-    for (const [, entry] of this._enemyRenderSystem.meshes) {
-      this.engine.renderer.remove(entry.group);
-    }
-
-    // Clean up item meshes
-    for (const [, mesh] of this._itemRenderSystem.meshes) {
-      this.engine.renderer.remove(mesh);
-    }
-
-    // Clean up extraction zone meshes
-    for (const [, group] of this._extractionZoneRenderSystem.meshes) {
-      this.engine.renderer.remove(group);
-    }
-
-    // Clean up chest meshes
-    for (const [, group] of this._chestRenderSystem.meshes) {
-      this.engine.renderer.remove(group);
-    }
-
-    // Clean up laser sight
-    this._laserSightSystem.destroy();
-
-    // Clean up effects
+    // Clean up render systems via their own destroy() methods
+    this._projectileSystem.destroy();
+    this._obstacleRenderSystem.destroy();
+    this._enemyRenderSystem.destroy();
+    this._itemRenderSystem.destroy();
+    this._extractionZoneRenderSystem.destroy();
+    this._chestRenderSystem.destroy();
     this._effectsSystem.destroy();
+    this._laserSightSystem.destroy();
+    this._interactionSystem.destroy();
 
     // Clean up idle arrow
     if (this._networkSync._idleArrow) {
       this.engine.renderer.remove(this._networkSync._idleArrow);
     }
-
-    // Clean up interaction system
-    this._interactionSystem.destroy();
 
     // Clean up audio
     this._audio.destroy();

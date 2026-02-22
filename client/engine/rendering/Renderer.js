@@ -41,6 +41,7 @@ export class Renderer {
     this._lightTransitionTimer = 0;
     this._lightTransitionDuration = 3.0;
     this._lightFrom = null;
+    this._tempColor = new THREE.Color();
 
     this._handleResize();
     window.addEventListener('resize', () => this._handleResize());
@@ -116,8 +117,8 @@ export class Renderer {
     this._ambientLight.intensity = this._lightFrom.ambientIntensity + (this._lightTarget.ambientIntensity - this._lightFrom.ambientIntensity) * t;
     this._directionalLight.intensity = this._lightFrom.directionalIntensity + (this._lightTarget.directionalIntensity - this._lightFrom.directionalIntensity) * t;
 
-    const clearColor = new THREE.Color().lerpColors(this._lightFrom.clearColor, this._lightTarget.clearColor, t);
-    this.webglRenderer.setClearColor(clearColor);
+    this._tempColor.lerpColors(this._lightFrom.clearColor, this._lightTarget.clearColor, t);
+    this.webglRenderer.setClearColor(this._tempColor);
 
     if (t >= 1.0) {
       this._lightTarget = null;

@@ -495,8 +495,18 @@ class GameRoom:
         self.extraction_zones = []
         self.chests = []
         self._prev_night_active = False
+        self._static_state = None
+
+        # Reset class-level ID counters to prevent unbounded growth across sessions
+        ObstacleState._next_id = 0
+        ExtractionZone._next_id = 0
+        LootChest._next_id = 0
+        ItemDrop._next_id = 0
+        ProjectileState._next_id = 0
+
         self._generate_obstacles()
         self._generate_extraction_zones()
+        self._rebuild_static_state()
 
     def add_player(self, player_id, display_name='Player'):
         state = PlayerState(player_id, display_name)
@@ -658,6 +668,14 @@ class GameRoom:
         if not player or not player.alive:
             return
         player.action_holding = bool(holding)
+
+    def _rebuild_static_state(self):
+        """Cache serialization of static/rarely-changing data."""
+        self._static_state = {
+            'obstacles': [o.to_dict() for o in self.obstacles],
+            'ground': [g.to_dict() for g in self.ground_patches],
+            'extractionZones': [z.to_dict() for z in self.extraction_zones],
+        }
 
     def _generate_obstacles(self):
         half = WORLD_SIZE / 2
@@ -1082,6 +1100,8 @@ class GameRoom:
                                 'obsId': obs.id,
                                 'loot': obs.car_loot['type'],
                             })
+                            # Refresh cached obstacles since loot state changed
+                            self._static_state['obstacles'] = [o.to_dict() for o in self.obstacles]
                             break
 
     def _projectile_hits_obstacle(self, px, py):
@@ -1468,7 +1488,7 @@ class GameRoom:
         return round(proj.damage * mult)
 
     def get_state(self):
-        return {
+        state = {
             'players': [p.to_dict() for p in self.players.values()],
             'projectiles': [
                 {
@@ -1480,9 +1500,6 @@ class GameRoom:
             ],
             'zombies': [z.to_dict() for z in self.zombies if z.alive],
             'items': [i.to_dict() for i in self.items],
-            'obstacles': [o.to_dict() for o in self.obstacles],
-            'ground': [g.to_dict() for g in self.ground_patches],
-            'extractionZones': [z.to_dict() for z in self.extraction_zones],
             'chests': [c.to_dict() for c in self.chests if not c.opened],
             'night': self.night_spawner.night,
             'nightActive': self.night_spawner.night_active,
@@ -1493,6 +1510,9 @@ class GameRoom:
             'gameOver': self.game_over,
             'events': self.events,
         }
+        # Merge cached static state (obstacles, ground, extractionZones)
+        state.update(self._static_state)
+        return state
 
 
 class GameManager:

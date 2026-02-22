@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { System } from '@engine/ecs/System.js';
+import { disposeObject3D } from '@engine/rendering/dispose.js';
+
+const MAX_POOL_SIZE = 50;
 
 /**
  * Renders projectiles from server state.
@@ -35,7 +38,11 @@ export class ProjectileSystem extends System {
       if (!seen.has(id)) {
         mesh.visible = false;
         this.renderer.remove(mesh);
-        this._pool.push(mesh);
+        if (this._pool.length < MAX_POOL_SIZE) {
+          this._pool.push(mesh);
+        } else {
+          disposeObject3D(mesh);
+        }
         this.meshes.delete(id);
       }
     }
@@ -50,5 +57,17 @@ export class ProjectileSystem extends System {
 
   update(dt) {
     // Updates driven by setProjectiles() called from NetworkSyncSystem
+  }
+
+  destroy() {
+    for (const [, mesh] of this.meshes) {
+      this.renderer.remove(mesh);
+      disposeObject3D(mesh);
+    }
+    this.meshes.clear();
+    for (const mesh of this._pool) {
+      disposeObject3D(mesh);
+    }
+    this._pool = [];
   }
 }

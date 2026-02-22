@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { System } from '@engine/ecs/System.js';
+import { disposeObject3D } from '@engine/rendering/dispose.js';
 
 /**
  * Renders zombies from server state.
@@ -45,15 +46,18 @@ export class EnemyRenderSystem extends System {
         // Billboard: cancel out parent rotation so HP bar faces camera
         entry.hpGroup.rotation.y = -(z.angle - Math.PI / 2);
 
-        // Redraw fill bar canvas
-        const canvas = entry.hpBar.userData.canvas;
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, 128, 16);
-        const color = pct > 0.5 ? '#44cc44' : pct > 0.25 ? '#ccaa22' : '#cc2222';
-        ctx.fillStyle = color;
-        ctx.roundRect(0, 0, Math.round(128 * pct), 16, 4);
-        ctx.fill();
-        entry.hpBar.userData.texture.needsUpdate = true;
+        // Only redraw canvas when HP fraction actually changed
+        if (entry.hpBar.userData.lastPct !== pct) {
+          entry.hpBar.userData.lastPct = pct;
+          const canvas = entry.hpBar.userData.canvas;
+          const ctx = canvas.getContext('2d');
+          ctx.clearRect(0, 0, 128, 16);
+          const color = pct > 0.5 ? '#44cc44' : pct > 0.25 ? '#ccaa22' : '#cc2222';
+          ctx.fillStyle = color;
+          ctx.roundRect(0, 0, Math.round(128 * pct), 16, 4);
+          ctx.fill();
+          entry.hpBar.userData.texture.needsUpdate = true;
+        }
       }
     }
 
@@ -62,6 +66,15 @@ export class EnemyRenderSystem extends System {
       if (!seen.has(id)) {
         entry.group.visible = false;
         this.renderer.remove(entry.group);
+        // Dispose HP bar canvas textures to prevent GPU memory leak
+        if (entry.hpBar.userData.texture) {
+          entry.hpBar.userData.texture.dispose();
+          entry.hpBar.material.dispose();
+        }
+        if (entry.hpBg.material && entry.hpBg.material.map) {
+          entry.hpBg.material.map.dispose();
+          entry.hpBg.material.dispose();
+        }
         this.meshes.delete(id);
       }
     }
@@ -240,5 +253,21 @@ export class EnemyRenderSystem extends System {
 
   update(dt) {
     // Driven by setZombies() from NetworkSyncSystem
+  }
+
+  destroy() {
+    for (const [, entry] of this.meshes) {
+      this.renderer.remove(entry.group);
+      if (entry.hpBar.userData.texture) {
+        entry.hpBar.userData.texture.dispose();
+        entry.hpBar.material.dispose();
+      }
+      if (entry.hpBg.material && entry.hpBg.material.map) {
+        entry.hpBg.material.map.dispose();
+        entry.hpBg.material.dispose();
+      }
+      disposeObject3D(entry.group);
+    }
+    this.meshes.clear();
   }
 }

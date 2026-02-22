@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { System } from '@engine/ecs/System.js';
+import { disposeObject3D } from '@engine/rendering/dispose.js';
 
 /**
  * Renders extraction zones as blue translucent cylinders with pulsing animation.
@@ -83,5 +84,13 @@ export class ExtractionZoneRenderSystem extends System {
         beacon.material.opacity = 0.3 + Math.sin(this._time * 3) * 0.15;
       }
     }
+  }
+
+  destroy() {
+    for (const [, group] of this.meshes) {
+      this.renderer.remove(group);
+      disposeObject3D(group);
+    }
+    this.meshes.clear();
   }
 }

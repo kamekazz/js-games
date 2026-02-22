@@ -193,6 +193,7 @@ export class EffectsSystem extends System {
     sprite.position.set(x + (Math.random() - 0.5) * 0.5, 2.0, -y);
     sprite.scale.set(2, 1, 1);
     sprite.renderOrder = 1000;
+    sprite.userData._dynamicTexture = true;
     this.renderer.add(sprite);
 
     this._effects.push({
@@ -214,7 +215,14 @@ export class EffectsSystem extends System {
     for (const eff of this._effects) {
       eff.life -= dt;
       if (eff.life <= 0) {
-        for (const m of eff.meshes) this.renderer.remove(m);
+        for (const m of eff.meshes) {
+          this.renderer.remove(m);
+          // Dispose dynamic textures (damage numbers) to prevent GPU memory leak
+          if (m.material && m.material.map && m.userData._dynamicTexture) {
+            m.material.map.dispose();
+            m.material.dispose();
+          }
+        }
         continue;
       }
       const t = eff.life / eff.maxLife; // 1→0
@@ -227,7 +235,13 @@ export class EffectsSystem extends System {
 
   destroy() {
     for (const eff of this._effects) {
-      for (const m of eff.meshes) this.renderer.remove(m);
+      for (const m of eff.meshes) {
+        this.renderer.remove(m);
+        if (m.material && m.material.map && m.userData._dynamicTexture) {
+          m.material.map.dispose();
+          m.material.dispose();
+        }
+      }
     }
     this._effects = [];
   }

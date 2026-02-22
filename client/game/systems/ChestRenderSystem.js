@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { System } from '@engine/ecs/System.js';
+import { disposeObject3D } from '@engine/rendering/dispose.js';
 
 /**
  * Renders loot chests from server state.
@@ -86,5 +87,13 @@ export class ChestRenderSystem extends System {
 
   update(dt) {
     this._time += dt;
+  }
+
+  destroy() {
+    for (const [, group] of this.meshes) {
+      this.renderer.remove(group);
+      disposeObject3D(group);
+    }
+    this.meshes.clear();
   }
 }
