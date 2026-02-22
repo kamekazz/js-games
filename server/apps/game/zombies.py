@@ -34,8 +34,8 @@ ZOMBIE_TYPES = {
 }
 
 # Night cycle constants
-NIGHT_DURATION = 720.0    # 12 minutes per night
-DAWN_DURATION = 45.0      # 45 second dawn break
+NIGHT_DURATION = 120.0    # 2 minutes per night
+DAWN_DURATION = 30.0      # 30 second dawn break
 INITIAL_DELAY = 5.0       # seconds before Night 1
 BLOOD_MOON_INTERVAL = 5   # every 5th night
 

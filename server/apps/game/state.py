@@ -1236,6 +1236,10 @@ class GameRoom:
             })
             # Clear unopened chests at dawn
             self.chests = [c for c in self.chests if c.opened]
+            # Kill all remaining zombies for dawn rest
+            for zombie in self.zombies:
+                if zombie.alive:
+                    zombie.alive = False
 
         # --- Update zombies (AI: chase nearest player) ---
         for zombie in self.zombies:

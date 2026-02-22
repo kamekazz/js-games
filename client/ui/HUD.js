@@ -210,6 +210,7 @@ export class HUD {
   }
 
   updateNight(night, active, elapsed, duration, isDawn, bloodMoon) {
+    this._nightDuration = duration || 120;
     if (night <= 0) return;
     if (isDawn) {
       this._nightEl.textContent = 'Dawn';
@@ -229,8 +230,9 @@ export class HUD {
   }
 
   _formatGameClock(elapsed) {
-    // Map 0-720s to 8:00 PM (20:00) → 8:00 AM (8:00), 12 game-hours
-    const gameHours = (elapsed / 720) * 12;
+    // Map elapsed to 8:00 PM (20:00) → 8:00 AM (8:00), 12 game-hours
+    const nightDur = this._nightDuration || 120;
+    const gameHours = (elapsed / nightDur) * 12;
     const h24 = (20 + gameHours) % 24; // 24-hour clock
     const minute = Math.floor((gameHours % 1) * 60);
     let dh = Math.floor(h24) % 12;
