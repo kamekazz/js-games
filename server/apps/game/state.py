@@ -20,6 +20,7 @@ FIRE_INTERVAL_TOLERANCE = 0.8
 WORLD_SIZE = 200
 TICK_RATE = 20
 TICK_INTERVAL = 1.0 / TICK_RATE
+ZOMBIE_SEPARATION_DIST = 1.2  # min distance multiplier between zombie centers
 
 # Weapon definitions
 WEAPONS = {
@@ -1306,6 +1307,34 @@ class GameRoom:
                         'deaths': nearest.deaths,
                         'accuracy': round(nearest.shots_hit / max(nearest.shots_fired, 1) * 100),
                     })
+
+        # --- Zombie separation (prevent stacking) ---
+        alive_zombies = [z for z in self.zombies if z.alive]
+        for i in range(len(alive_zombies)):
+            zi = alive_zombies[i]
+            for j in range(i + 1, len(alive_zombies)):
+                zj = alive_zombies[j]
+                dx = zj.x - zi.x
+                dy = zj.y - zi.y
+                dist_sq = dx * dx + dy * dy
+                min_dist = (zi.size + zj.size) * ZOMBIE_SEPARATION_DIST
+                min_dist_sq = min_dist * min_dist
+                if dist_sq < min_dist_sq and dist_sq > 0.0001:
+                    dist = math.sqrt(dist_sq)
+                    overlap = (min_dist - dist) * 0.5
+                    nx = dx / dist
+                    ny = dy / dist
+                    zi.x -= nx * overlap
+                    zi.y -= ny * overlap
+                    zj.x += nx * overlap
+                    zj.y += ny * overlap
+                elif dist_sq <= 0.0001:
+                    angle = random.random() * math.pi * 2
+                    nudge = min_dist * 0.5
+                    zi.x -= math.cos(angle) * nudge
+                    zi.y -= math.sin(angle) * nudge
+                    zj.x += math.cos(angle) * nudge
+                    zj.y += math.sin(angle) * nudge
 
         # --- Update projectiles (hit zombies AND players) ---
         surviving = []
