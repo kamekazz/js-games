@@ -103,7 +103,8 @@ class GameConsumer(AsyncWebsocketConsumer):
                 player = room.players.get(self.player_id)
                 if player:
                     player.angle = float(angle)
-            room.process_shoot(self.player_id)
+            aim_time = max(0.0, float(data.get('aimTime', 0)))
+            room.process_shoot(self.player_id, aim_time)
 
     def _handle_reload(self):
         room = game_manager.rooms.get(self.room_code)

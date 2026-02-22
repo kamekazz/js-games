@@ -78,13 +78,14 @@ export class WeaponSystem extends System {
         if (this.audioManager) this.audioManager.playReload();
       }
 
-      // Shoot — send current angle so server uses the right direction immediately
+      // Shoot — send current angle and aim time so server calculates accuracy
       if (wantShoot && weapon.cooldown <= 0 && !weapon.reloading && weapon.ammo > 0) {
         const angle = entity.get(Rotation).angle;
-        this.networkClient.send({ type: 'player_shoot', angle });
+        this.networkClient.send({ type: 'player_shoot', angle, aimTime: weapon.aimTime });
         weapon.cooldown = weapon.fireRate;
         const cost = WEAPONS[weapon.id].ammoCost || 1;
         weapon.ammo = Math.max(0, weapon.ammo - cost);
+        weapon.aimTime = 0;
       }
     }
 

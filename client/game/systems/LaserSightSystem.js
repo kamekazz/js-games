@@ -14,7 +14,6 @@ export class LaserSightSystem extends System {
     this._mesh = null;
     this._geometry = null;
     this._material = null;
-    this._aimTime = 0;
     this._currentColor = null;
   }
 
@@ -44,8 +43,8 @@ export class LaserSightSystem extends System {
       const minSpread = wDef.coneMinSpread;
       const focusDuration = wDef.focusDuration;
 
-      this._aimTime += dt;
-      const progress = Math.min(this._aimTime / focusDuration, 1);
+      weapon.aimTime += dt;
+      const progress = Math.min(weapon.aimTime / focusDuration, 1);
       const spread = minSpread + (maxSpread - minSpread) * (1 - progress);
 
       const pos = localEntity.get(Position);
@@ -104,7 +103,9 @@ export class LaserSightSystem extends System {
       posAttr.needsUpdate = true;
     } else {
       this._removeMesh();
-      this._aimTime = 0;
+      // Reset aim time on the weapon component when not aiming
+      const weapon = localEntity.get(Weapon);
+      if (weapon) weapon.aimTime = 0;
     }
   }
 

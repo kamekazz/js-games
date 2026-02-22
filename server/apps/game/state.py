@@ -34,6 +34,10 @@ WEAPONS = {
         'falloff': True,
         'falloff_start': 15,
         'falloff_min': 0.5,
+        'cone_max_spread': 2,
+        'cone_min_spread': 0.04,
+        'focus_duration': 0.8,
+        'laser_length': 5,
     },
     'rifle': {
         'damage': 35,
@@ -48,6 +52,10 @@ WEAPONS = {
         'falloff': False,
         'falloff_start': 0,
         'falloff_min': 1.0,
+        'cone_max_spread': 0.8,
+        'cone_min_spread': 0.02,
+        'focus_duration': 1.5,
+        'laser_length': 50,
     },
     'uzi': {
         'damage': 10,
@@ -62,6 +70,10 @@ WEAPONS = {
         'falloff': True,
         'falloff_start': 10,
         'falloff_min': 0.6,
+        'cone_max_spread': 3,
+        'cone_min_spread': 0.08,
+        'focus_duration': 0.4,
+        'laser_length': 3.5,
     },
     'shotgun': {
         'damage': 8,
@@ -77,6 +89,10 @@ WEAPONS = {
         'falloff_min': 0.3,
         'close_bonus': 1.5,
         'close_bonus_range': 5,
+        'cone_max_spread': 5,
+        'cone_min_spread': 0.3,
+        'focus_duration': 0.6,
+        'laser_length': 2.5,
     },
 }
 
@@ -503,7 +519,7 @@ class GameRoom:
         player.angle = angle
         player.sprinting = bool(sprinting) and (move_x != 0 or move_y != 0)
 
-    def process_shoot(self, player_id):
+    def process_shoot(self, player_id, aim_time=0.0):
         player = self.players.get(player_id)
         if not player or not player.alive:
             return
@@ -528,16 +544,29 @@ class GameRoom:
         player.fire_cooldown = weapon['fire_rate']
         player.shots_fired += 1
 
+        # Calculate accuracy spread from cone focus
+        focus_duration = weapon.get('focus_duration', 1.0)
+        cone_max = weapon.get('cone_max_spread', 0)
+        cone_min = weapon.get('cone_min_spread', 0)
+        laser_len = weapon.get('laser_length', 5)
+        # Clamp aim_time to focus_duration (anti-cheat)
+        aim_time = min(aim_time, focus_duration)
+        progress = min(aim_time / focus_duration, 1.0) if focus_duration > 0 else 1.0
+        cone_spread = cone_min + (cone_max - cone_min) * (1.0 - progress)
+        # Convert cone width at laser distance to angular half-spread
+        accuracy_half_angle = math.atan2(cone_spread / 2, laser_len)
+
         pellets = weapon.get('pellets', 1)
         spread = weapon.get('spread_angle', 0)
 
         if pellets > 1:
             if spread > 0:
-                # Spread pellets across the angle (shotgun)
+                # Spread pellets across the angle (shotgun) + accuracy offset
                 half_spread = spread / 2
                 for i in range(pellets):
                     offset = -half_spread + spread * (i / (pellets - 1))
-                    pellet_angle = player.angle + offset
+                    noise = random.uniform(-accuracy_half_angle, accuracy_half_angle)
+                    pellet_angle = player.angle + offset + noise
                     proj = ProjectileState(player_id, player.x, player.y, pellet_angle, weapon, player.weapon_id)
                     self.projectiles.append(proj)
             else:
@@ -545,13 +574,18 @@ class GameRoom:
                 dx = math.cos(player.angle)
                 dy = math.sin(player.angle)
                 spacing = 1.2  # distance between bullets
+                noise = random.uniform(-accuracy_half_angle, accuracy_half_angle)
+                aimed_angle = player.angle + noise
+                dx = math.cos(aimed_angle)
+                dy = math.sin(aimed_angle)
                 for i in range(pellets):
                     ox = player.x - dx * spacing * i
                     oy = player.y - dy * spacing * i
-                    proj = ProjectileState(player_id, ox, oy, player.angle, weapon, player.weapon_id)
+                    proj = ProjectileState(player_id, ox, oy, aimed_angle, weapon, player.weapon_id)
                     self.projectiles.append(proj)
         else:
-            proj = ProjectileState(player_id, player.x, player.y, player.angle, weapon, player.weapon_id)
+            noise = random.uniform(-accuracy_half_angle, accuracy_half_angle)
+            proj = ProjectileState(player_id, player.x, player.y, player.angle + noise, weapon, player.weapon_id)
             self.projectiles.append(proj)
 
         self.events.append({
