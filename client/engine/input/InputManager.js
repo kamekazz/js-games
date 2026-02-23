@@ -1,7 +1,10 @@
 export class InputManager {
   constructor(renderer) {
     this.renderer = renderer; // needed for mouse→world conversion
-    this._isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    // Use pointer: fine to detect mouse — correctly handles touchscreen
+    // laptops (fine pointer = mouse) vs phones (coarse pointer = finger)
+    const hasFinePointer = window.matchMedia?.('(pointer: fine)').matches ?? true;
+    this._isTouch = !hasFinePointer;
     this.state = {
       moveX: 0,
       moveY: 0,
