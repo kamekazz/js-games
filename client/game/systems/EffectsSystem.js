@@ -22,34 +22,96 @@ export class EffectsSystem extends System {
       new THREE.MeshBasicMaterial({ color: 0xffcc00 }),
     ];
 
+    this._flameOuterMat = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.7 });
+    this._flameTipMat = new THREE.MeshBasicMaterial({ color: 0xff2200, transparent: true, opacity: 0.5 });
+
     this._bloodMat = new THREE.MeshBasicMaterial({ color: 0x881111 });
     this._deathMat = new THREE.MeshBasicMaterial({ color: 0x44ff44 });
   }
 
   /**
-   * Muzzle flash at position+angle
+   * Muzzle flash at position+angle, scaled by weapon type
    */
-  spawnMuzzleFlash(x, y, angle) {
-    // Flash sphere
-    const flash = new THREE.Mesh(this._flashGeo, this._flashMat);
-    const ox = Math.cos(angle) * 1.2;
-    const oy = Math.sin(angle) * 1.2;
-    flash.position.set(x + ox, 0.6, -(y + oy));
-    this.renderer.add(flash);
+  spawnMuzzleFlash(x, y, angle, weaponId = 'pistol') {
+    const configs = {
+      pistol:  { size: 1.0, intensity: 1.0, duration: 0.06 },
+      uzi:     { size: 0.6, intensity: 0.6, duration: 0.04 },
+      rifle:   { size: 1.8, intensity: 2.0, duration: 0.08 },
+      shotgun: { size: 2.2, intensity: 2.5, duration: 0.10 },
+    };
+    const cfg = configs[weaponId] || configs.pistol;
+    const { size, intensity, duration } = cfg;
+
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    const baseX = x + dx * 1.2;
+    const baseY = y + dy * 1.2;
+    const meshes = [];
+
+    // 1. Bright core — yellow sphere
+    const core = new THREE.Mesh(this._flashGeo, this._flashMat);
+    core.position.set(baseX, 0.6, -baseY);
+    core.scale.setScalar(size);
+    this.renderer.add(core);
+    meshes.push(core);
+
+    // 2. Outer flame — orange sphere, offset forward, stretched
+    const outer = new THREE.Mesh(this._flashGeo, this._flameOuterMat);
+    outer.position.set(baseX + dx * 0.3 * size, 0.6, -(baseY + dy * 0.3 * size));
+    outer.scale.set(size * 1.4, size * 0.7, size * 1.4);
+    this.renderer.add(outer);
+    meshes.push(outer);
+
+    // 3. Red tip — only for size >= 1.0
+    let tip = null;
+    if (size >= 1.0) {
+      tip = new THREE.Mesh(this._flashGeo, this._flameTipMat);
+      tip.position.set(baseX + dx * 0.6 * size, 0.6, -(baseY + dy * 0.6 * size));
+      tip.scale.setScalar(size * 0.5);
+      this.renderer.add(tip);
+      meshes.push(tip);
+    }
+
+    // Spark particles for powerful weapons (size >= 1.5)
+    const sparks = [];
+    if (size >= 1.5) {
+      const sparkCount = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < sparkCount; i++) {
+        const mat = this._sparkMats[Math.floor(Math.random() * this._sparkMats.length)];
+        const spark = new THREE.Mesh(this._sparkGeo, mat);
+        spark.position.set(baseX, 0.6, -baseY);
+        this.renderer.add(spark);
+        const spread = (Math.random() - 0.5) * 1.0;
+        spark.userData.vx = (dx + Math.cos(angle + spread) * 0.5) * (8 + Math.random() * 6);
+        spark.userData.vz = (dy + Math.sin(angle + spread) * 0.5) * (8 + Math.random() * 6);
+        spark.userData.vy = 1 + Math.random() * 2;
+        meshes.push(spark);
+        sparks.push(spark);
+      }
+    }
 
     // Point light
-    const light = new THREE.PointLight(0xffaa22, 3, 8);
-    light.position.copy(flash.position);
+    const light = new THREE.PointLight(0xffaa22, 3 * intensity, 6 + 4 * size);
+    light.position.set(baseX, 0.6, -baseY);
     this.renderer.add(light);
+    meshes.push(light);
 
     this._effects.push({
-      meshes: [flash, light],
-      life: 0.06,
-      maxLife: 0.06,
-      update: (eff, t) => {
-        const scale = t;
-        flash.scale.setScalar(scale);
-        light.intensity = 3 * t;
+      meshes,
+      life: duration,
+      maxLife: duration,
+      update: (eff, t, dt) => {
+        core.scale.setScalar(size * t);
+        outer.scale.set(size * 1.4 * t, size * 0.7 * t, size * 1.4 * t);
+        if (tip) tip.scale.setScalar(size * 0.5 * t);
+        light.intensity = 3 * intensity * t;
+        for (const s of sparks) {
+          s.position.x += s.userData.vx * dt;
+          s.position.z -= s.userData.vz * dt;
+          s.position.y += s.userData.vy * dt;
+          s.userData.vy -= 12 * dt;
+          s.scale.setScalar(t);
+        }
       },
     });
   }

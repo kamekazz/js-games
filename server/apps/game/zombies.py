@@ -47,6 +47,7 @@ class ZombieState:
         'attack_cooldown', 'attack_timer', 'size',
         'alive', 'xp',
         'aggro_target', 'aggro_timer', 'base_speed',
+        'knockback_vx', 'knockback_vy', 'knockback_timer', 'dizzy_timer',
     )
 
     _next_id = 0
@@ -80,9 +81,13 @@ class ZombieState:
         self.aggro_target = None
         self.aggro_timer = 0.0
         self.base_speed = self.speed
+        self.knockback_vx = 0.0
+        self.knockback_vy = 0.0
+        self.knockback_timer = 0.0
+        self.dizzy_timer = 0.0
 
     def to_dict(self):
-        return {
+        d = {
             'id': self.id,
             'type': self.zombie_type,
             'x': round(self.x, 2),
@@ -92,6 +97,9 @@ class ZombieState:
             'maxHp': self.max_health,
             'alive': self.alive,
         }
+        if self.dizzy_timer > 0:
+            d['dizzy'] = True
+        return d
 
 
 class NightCycleSpawner:

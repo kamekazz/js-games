@@ -30,6 +30,24 @@ DAWN_DEAGGRO_DISTANCE = 20.0   # move 20+ units away → start de-aggro timer
 DAWN_DEAGGRO_DELAY = 3.0       # seconds before zombie gives up chasing
 DAWN_HERD_SPEED_MULT = 0.3     # herding movement speed (fraction of dawn speed)
 
+# Knockback & dizzy constants
+KNOCKBACK_BASE_FORCE = 15.0
+KNOCKBACK_DAMAGE_REF = 20.0       # pistol damage = 1.0x force
+KNOCKBACK_MIN_FORCE = 3.0
+KNOCKBACK_DECAY = 8.0             # exponential drag
+KNOCKBACK_DURATION = 0.25
+
+DIZZY_CHANCE_PER_DMG = 0.015      # pistol: 20*0.015 = 30%
+DIZZY_BASE_DURATION = 0.5
+DIZZY_DURATION_PER_DMG = 0.03
+DIZZY_MAX_DURATION = 1.5
+
+ZOMBIE_KNOCKBACK_RESIST = {
+    'walker': 1.0,
+    'runner': 1.2,    # lighter, flies further
+    'tank':   0.3,    # heavy, barely moves
+}
+
 # Weapon definitions
 WEAPONS = {
     'pistol': {
@@ -621,6 +639,7 @@ class GameRoom:
             'x': round(player.x, 2),
             'y': round(player.y, 2),
             'angle': round(player.angle, 3),
+            'weapon': player.weapon_id,
         })
 
         # Alert nearby dawn zombies to gunfire
@@ -1268,6 +1287,9 @@ class GameRoom:
                     zombie.aggro_target = None
                     zombie.aggro_timer = 0.0
 
+        # --- Update zombie knockback & dizzy ---
+        self._update_zombie_knockback_dizzy(dt, half)
+
         # --- Update zombies ---
         is_dawn = self.night_spawner._night_ended
         if is_dawn:
@@ -1338,6 +1360,16 @@ class GameRoom:
                 if dx * dx + dy * dy < zombie.size * zombie.size + 0.5:
                     dmg = self._calc_damage(proj)
                     zombie.health -= dmg
+                    # Knockback impulse
+                    resist = ZOMBIE_KNOCKBACK_RESIST.get(zombie.zombie_type, 1.0)
+                    force = max(KNOCKBACK_MIN_FORCE, KNOCKBACK_BASE_FORCE * (dmg / KNOCKBACK_DAMAGE_REF) * resist)
+                    zombie.knockback_vx += proj.dx * force
+                    zombie.knockback_vy += proj.dy * force
+                    zombie.knockback_timer = KNOCKBACK_DURATION
+                    # Dizzy (stun) chance
+                    if random.random() < dmg * DIZZY_CHANCE_PER_DMG:
+                        dur = min(DIZZY_BASE_DURATION + dmg * DIZZY_DURATION_PER_DMG, DIZZY_MAX_DURATION)
+                        zombie.dizzy_timer = max(zombie.dizzy_timer, dur)
                     # Track accuracy
                     shooter = self.players.get(proj.owner_id)
                     if shooter:
@@ -1526,10 +1558,45 @@ class GameRoom:
             zombie.y = max(-half, min(half, zombie.y))
             zombie.x, zombie.y = self._push_out_of_obstacles(zombie.x, zombie.y, zombie.size * 0.5)
 
+    def _update_zombie_knockback_dizzy(self, dt, half):
+        """Update knockback physics and dizzy timers for all alive zombies."""
+        for zombie in self.zombies:
+            if not zombie.alive:
+                continue
+            # Tick dizzy timer
+            if zombie.dizzy_timer > 0:
+                zombie.dizzy_timer -= dt
+                if zombie.dizzy_timer < 0:
+                    zombie.dizzy_timer = 0.0
+            # Knockback physics
+            if zombie.knockback_timer > 0:
+                zombie.knockback_timer -= dt
+                zombie.x += zombie.knockback_vx * dt
+                zombie.y += zombie.knockback_vy * dt
+                # Clamp to world bounds
+                zombie.x = max(-half, min(half, zombie.x))
+                zombie.y = max(-half, min(half, zombie.y))
+                # Push out of obstacles
+                zombie.x, zombie.y = self._push_out_of_obstacles(zombie.x, zombie.y, zombie.size * 0.5)
+                # Exponential velocity decay
+                decay = math.exp(-KNOCKBACK_DECAY * dt)
+                zombie.knockback_vx *= decay
+                zombie.knockback_vy *= decay
+                # Zero out when timer expires
+                if zombie.knockback_timer <= 0:
+                    zombie.knockback_timer = 0.0
+                    zombie.knockback_vx = 0.0
+                    zombie.knockback_vy = 0.0
+
     def _update_zombies_night(self, dt, alive_players, half):
         """Night AI: always chase nearest player."""
         for zombie in self.zombies:
             if not zombie.alive:
+                continue
+
+            if zombie.dizzy_timer > 0:
+                if zombie.attack_timer > 0:
+                    zombie.attack_timer -= dt
                 continue
 
             nearest = None
@@ -1568,6 +1635,11 @@ class GameRoom:
         player_map = {p.player_id: p for p in alive_players}
 
         for zombie in alive_zombies:
+            if zombie.dizzy_timer > 0:
+                if zombie.attack_timer > 0:
+                    zombie.attack_timer -= dt
+                continue
+
             # --- Proximity aggro check (if not already aggro'd) ---
             if zombie.aggro_target is None:
                 for player in alive_players:

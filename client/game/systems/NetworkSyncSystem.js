@@ -290,7 +290,7 @@ export class NetworkSyncSystem extends System {
     for (const evt of this._latestEvents) {
       if (evt.type === 'shoot') {
         if (this.audioManager) this.audioManager.playShoot();
-        if (this.effectsSystem) this.effectsSystem.spawnMuzzleFlash(evt.x, evt.y, evt.angle);
+        if (this.effectsSystem) this.effectsSystem.spawnMuzzleFlash(evt.x, evt.y, evt.angle, evt.weapon);
       } else if (evt.type === 'proj_hit') {
         if (this.audioManager) this.audioManager.playZombieHit();
         if (this.effectsSystem) {

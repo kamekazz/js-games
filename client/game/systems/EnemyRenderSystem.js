@@ -36,6 +36,15 @@ export class EnemyRenderSystem extends System {
       entry.group.rotation.y = z.angle - Math.PI / 2;
       entry.group.visible = true;
 
+      // Dizzy wobble
+      if (z.dizzy) {
+        const t = performance.now();
+        entry.group.rotation.y += Math.sin(t * 0.012) * 0.3;
+        entry.group.rotation.z = Math.sin(t * 0.008) * 0.15;
+      } else {
+        entry.group.rotation.z = 0;
+      }
+
       // Update HP bar
       const pct = Math.max(0, z.hp / z.maxHp);
       const show = pct < 1;
