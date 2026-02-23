@@ -22,6 +22,14 @@ TICK_RATE = 20
 TICK_INTERVAL = 1.0 / TICK_RATE
 ZOMBIE_SEPARATION_DIST = 1.2  # min distance multiplier between zombie centers
 
+# Dawn zombie behavior constants
+DAWN_SPEED_MULT = 0.5          # zombies move at 50% speed during dawn
+DAWN_AGGRO_PROXIMITY = 10.0    # get within 10 units → aggro
+DAWN_AGGRO_GUNFIRE = 30.0      # shoot within 30 units → aggro
+DAWN_DEAGGRO_DISTANCE = 20.0   # move 20+ units away → start de-aggro timer
+DAWN_DEAGGRO_DELAY = 3.0       # seconds before zombie gives up chasing
+DAWN_HERD_SPEED_MULT = 0.3     # herding movement speed (fraction of dawn speed)
+
 # Weapon definitions
 WEAPONS = {
     'pistol': {
@@ -615,6 +623,10 @@ class GameRoom:
             'y': round(player.y, 2),
             'angle': round(player.angle, 3),
         })
+
+        # Alert nearby dawn zombies to gunfire
+        if self.night_spawner._night_ended:
+            self._alert_zombies_gunfire(player_id, player.x, player.y)
 
     def process_reload(self, player_id):
         player = self.players.get(player_id)
@@ -1230,6 +1242,12 @@ class GameRoom:
                 'bloodMoon': self.night_spawner.is_blood_moon,
             })
             self._spawn_night_chests()
+            # Restore surviving dawn zombies to full speed for new night
+            for zombie in self.zombies:
+                if zombie.alive:
+                    zombie.speed = zombie.base_speed
+                    zombie.aggro_target = None
+                    zombie.aggro_timer = 0.0
         elif night_event == 'dawn':
             self.events.append({
                 'type': 'dawn',
@@ -1237,81 +1255,19 @@ class GameRoom:
             })
             # Clear unopened chests at dawn
             self.chests = [c for c in self.chests if c.opened]
-            # Kill all remaining zombies for dawn rest
+            # Slow zombies and clear aggro for dawn passive behavior
             for zombie in self.zombies:
                 if zombie.alive:
-                    zombie.alive = False
+                    zombie.speed = zombie.base_speed * DAWN_SPEED_MULT
+                    zombie.aggro_target = None
+                    zombie.aggro_timer = 0.0
 
-        # --- Update zombies (AI: chase nearest player) ---
-        for zombie in self.zombies:
-            if not zombie.alive:
-                continue
-
-            # Find nearest alive player
-            nearest = None
-            nearest_dist = float('inf')
-            for player in alive_players:
-                dx = player.x - zombie.x
-                dy = player.y - zombie.y
-                dist = math.sqrt(dx * dx + dy * dy)
-                if dist < nearest_dist:
-                    nearest_dist = dist
-                    nearest = player
-
-            if nearest is None:
-                continue
-
-            # Move toward nearest player
-            dx = nearest.x - zombie.x
-            dy = nearest.y - zombie.y
-            dist = math.sqrt(dx * dx + dy * dy)
-
-            if dist > 0.1:
-                zombie.angle = math.atan2(dy, dx)
-                zombie.x += (dx / dist) * zombie.speed * dt
-                zombie.y += (dy / dist) * zombie.speed * dt
-                zombie.x = max(-half, min(half, zombie.x))
-                zombie.y = max(-half, min(half, zombie.y))
-                # Obstacle collision
-                zombie.x, zombie.y = self._push_out_of_obstacles(zombie.x, zombie.y, zombie.size * 0.5)
-
-            # Attack player on contact
-            if zombie.attack_timer > 0:
-                zombie.attack_timer -= dt
-
-            hit_radius = zombie.size + 0.6  # zombie size + player size
-            if dist < hit_radius and zombie.attack_timer <= 0:
-                nearest.health -= zombie.damage
-                zombie.attack_timer = zombie.attack_cooldown
-                self.events.append({
-                    'type': 'zombie_hit',
-                    'pid': nearest.player_id,
-                    'dmg': zombie.damage,
-                    'hp': nearest.health,
-                })
-                if nearest.health <= 0:
-                    nearest.health = 0
-                    nearest.alive = False
-                    nearest.eliminated = True
-                    nearest.vx = 0
-                    nearest.vy = 0
-                    nearest.deaths += 1
-                    self.events.append({
-                        'type': 'kill',
-                        'pid': nearest.player_id,
-                        'by': 'zombie',
-                    })
-                    self.events.append({
-                        'type': 'player_eliminated',
-                        'pid': nearest.player_id,
-                        'night': self.night_spawner.night,
-                        'elapsed': round(time.time() - self.start_time, 1),
-                        'name': nearest.display_name,
-                        'score': 0,
-                        'kills': nearest.zombie_kills,
-                        'deaths': nearest.deaths,
-                        'accuracy': round(nearest.shots_hit / max(nearest.shots_fired, 1) * 100),
-                    })
+        # --- Update zombies ---
+        is_dawn = self.night_spawner._night_ended
+        if is_dawn:
+            self._update_zombies_dawn(dt, alive_players, half)
+        else:
+            self._update_zombies_night(dt, alive_players, half)
 
         # --- Zombie separation (prevent stacking) ---
         alive_zombies = [z for z in self.zombies if z.alive]
@@ -1411,6 +1367,9 @@ class GameRoom:
                                 # Typed ammo drop
                                 wid = random.choice(['pistol', 'rifle', 'uzi', 'shotgun'])
                                 self.items.append(ItemDrop('ammo', zombie.x, zombie.y, weapon_id=wid))
+                    # Alert nearby dawn zombies at impact position
+                    if self.night_spawner._night_ended:
+                        self._alert_zombies_gunfire(proj.owner_id, zombie.x, zombie.y)
                     hit = True
                     break
 
@@ -1505,6 +1464,159 @@ class GameRoom:
                 surviving_items.append(item)
 
         self.items = surviving_items
+
+    def _zombie_attack_player(self, zombie, target, dt):
+        """Handle zombie melee attack on a player. Shared by night and dawn AI."""
+        if zombie.attack_timer > 0:
+            zombie.attack_timer -= dt
+
+        dx = target.x - zombie.x
+        dy = target.y - zombie.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        hit_radius = zombie.size + 0.6
+        if dist < hit_radius and zombie.attack_timer <= 0:
+            target.health -= zombie.damage
+            zombie.attack_timer = zombie.attack_cooldown
+            self.events.append({
+                'type': 'zombie_hit',
+                'pid': target.player_id,
+                'dmg': zombie.damage,
+                'hp': target.health,
+            })
+            if target.health <= 0:
+                target.health = 0
+                target.alive = False
+                target.eliminated = True
+                target.vx = 0
+                target.vy = 0
+                target.deaths += 1
+                self.events.append({
+                    'type': 'kill',
+                    'pid': target.player_id,
+                    'by': 'zombie',
+                })
+                self.events.append({
+                    'type': 'player_eliminated',
+                    'pid': target.player_id,
+                    'night': self.night_spawner.night,
+                    'elapsed': round(time.time() - self.start_time, 1),
+                    'name': target.display_name,
+                    'score': 0,
+                    'kills': target.zombie_kills,
+                    'deaths': target.deaths,
+                    'accuracy': round(target.shots_hit / max(target.shots_fired, 1) * 100),
+                })
+
+    def _move_zombie_toward(self, zombie, tx, ty, speed, dt, half):
+        """Move zombie toward a target position at given speed."""
+        dx = tx - zombie.x
+        dy = ty - zombie.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist > 0.1:
+            zombie.angle = math.atan2(dy, dx)
+            zombie.x += (dx / dist) * speed * dt
+            zombie.y += (dy / dist) * speed * dt
+            zombie.x = max(-half, min(half, zombie.x))
+            zombie.y = max(-half, min(half, zombie.y))
+            zombie.x, zombie.y = self._push_out_of_obstacles(zombie.x, zombie.y, zombie.size * 0.5)
+
+    def _update_zombies_night(self, dt, alive_players, half):
+        """Night AI: always chase nearest player."""
+        for zombie in self.zombies:
+            if not zombie.alive:
+                continue
+
+            nearest = None
+            nearest_dist = float('inf')
+            for player in alive_players:
+                dx = player.x - zombie.x
+                dy = player.y - zombie.y
+                dist = math.sqrt(dx * dx + dy * dy)
+                if dist < nearest_dist:
+                    nearest_dist = dist
+                    nearest = player
+
+            if nearest is None:
+                continue
+
+            self._move_zombie_toward(zombie, nearest.x, nearest.y, zombie.speed, dt, half)
+            self._zombie_attack_player(zombie, nearest, dt)
+
+    def _update_zombies_dawn(self, dt, alive_players, half):
+        """Dawn AI: passive herding with proximity/gunfire aggro."""
+        alive_zombies = [z for z in self.zombies if z.alive]
+        if not alive_zombies:
+            return
+
+        # Precompute herd centroid once
+        cx = 0.0
+        cy = 0.0
+        for z in alive_zombies:
+            cx += z.x
+            cy += z.y
+        count = len(alive_zombies)
+        cx /= count
+        cy /= count
+
+        # Build quick lookup of alive players by id
+        player_map = {p.player_id: p for p in alive_players}
+
+        for zombie in alive_zombies:
+            # --- Proximity aggro check (if not already aggro'd) ---
+            if zombie.aggro_target is None:
+                for player in alive_players:
+                    dx = player.x - zombie.x
+                    dy = player.y - zombie.y
+                    if dx * dx + dy * dy < DAWN_AGGRO_PROXIMITY * DAWN_AGGRO_PROXIMITY:
+                        zombie.aggro_target = player.player_id
+                        zombie.aggro_timer = 0.0
+                        break
+
+            # --- Aggro'd behavior ---
+            if zombie.aggro_target is not None:
+                target = player_map.get(zombie.aggro_target)
+                # De-aggro if target dead/disconnected/extracted
+                if target is None or not target.alive:
+                    zombie.aggro_target = None
+                    zombie.aggro_timer = 0.0
+                    continue
+
+                dx = target.x - zombie.x
+                dy = target.y - zombie.y
+                dist_sq = dx * dx + dy * dy
+
+                # Check de-aggro distance
+                if dist_sq > DAWN_DEAGGRO_DISTANCE * DAWN_DEAGGRO_DISTANCE:
+                    zombie.aggro_timer += dt
+                    if zombie.aggro_timer >= DAWN_DEAGGRO_DELAY:
+                        zombie.aggro_target = None
+                        zombie.aggro_timer = 0.0
+                        continue
+                else:
+                    zombie.aggro_timer = 0.0
+
+                # Chase target at dawn speed
+                self._move_zombie_toward(zombie, target.x, target.y, zombie.speed, dt, half)
+                self._zombie_attack_player(zombie, target, dt)
+            else:
+                # --- Passive herding: move toward centroid at slow speed ---
+                herd_speed = zombie.speed * DAWN_HERD_SPEED_MULT
+                self._move_zombie_toward(zombie, cx, cy, herd_speed, dt, half)
+                # Tick down attack timer even when passive
+                if zombie.attack_timer > 0:
+                    zombie.attack_timer -= dt
+
+    def _alert_zombies_gunfire(self, shooter_id, x, y):
+        """Alert passive dawn zombies near a gunfire position."""
+        r_sq = DAWN_AGGRO_GUNFIRE * DAWN_AGGRO_GUNFIRE
+        for zombie in self.zombies:
+            if not zombie.alive or zombie.aggro_target is not None:
+                continue
+            dx = zombie.x - x
+            dy = zombie.y - y
+            if dx * dx + dy * dy < r_sq:
+                zombie.aggro_target = shooter_id
+                zombie.aggro_timer = 0.0
 
     def _calc_damage(self, proj):
         weapon = WEAPONS.get(proj.weapon_id)

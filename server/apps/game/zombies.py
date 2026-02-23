@@ -46,6 +46,7 @@ class ZombieState:
         'health', 'max_health', 'speed', 'damage',
         'attack_cooldown', 'attack_timer', 'size',
         'alive', 'xp',
+        'aggro_target', 'aggro_timer', 'base_speed',
     )
 
     _next_id = 0
@@ -76,6 +77,9 @@ class ZombieState:
         self.size = ztype['size']
         self.alive = True
         self.xp = ztype['xp']
+        self.aggro_target = None
+        self.aggro_timer = 0.0
+        self.base_speed = self.speed
 
     def to_dict(self):
         return {
