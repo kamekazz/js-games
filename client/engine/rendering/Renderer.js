@@ -24,8 +24,8 @@ export class Renderer {
       0.1,
       200
     );
-    // Isometric-style 3/4 view — tilted enough to see character sides
-    this.camera.position.set(0, 40, 25);
+    // Angled 3/4 view — lower and further back for more perspective
+    this.camera.position.set(0, 28, 25);
     this.camera.lookAt(0, 0, 0);
 
     // Lighting

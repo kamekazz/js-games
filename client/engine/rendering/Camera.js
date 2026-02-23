@@ -3,7 +3,7 @@ export class CameraController {
     this.camera = camera;
     // Store the initial offset from the look-at point
     this.offsetY = camera.position.y;  // height above ground
-    this.offsetZ = 8; // slight tilt to see character sides
+    this.offsetZ = 15; // offset behind player for angled view
     this.targetX = 0;
     this.targetZ = 0;
     this.lerpSpeed = 5;
