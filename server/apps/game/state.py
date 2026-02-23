@@ -142,9 +142,9 @@ GRASS_SPEED = 0.8  # default when not on any patch
 # Item drop definitions
 ITEM_TYPES = {
     'health': {'heal': 30, 'color': 'green'},
-    'ammo':   {'ammo': 12, 'color': 'orange'},
+    'ammo':   {'ammo': 6, 'color': 'orange'},
 }
-ITEM_DROP_CHANCE = 0.35  # 35% chance a zombie drops an item
+ITEM_DROP_CHANCE = 0.20  # 20% chance a zombie drops an item
 ITEM_PICKUP_RADIUS = 1.5
 ITEM_LIFETIME = 15.0  # seconds before item disappears
 
@@ -155,27 +155,25 @@ CHEST_INTERACT_RADIUS = 2.5
 CAR_INTERACT_RADIUS = 3.5
 
 # Chest loot table: (weight, loot_dict, hold_duration)
+# Weapons can ONLY be found in chests — uzi easiest, rifle harder, shotgun hardest
 CHEST_LOOT_TABLE = [
-    (30, {'type': 'weapon_unlock', 'weapon_id': 'rifle'}, 4.0),
-    (30, {'type': 'weapon_unlock', 'weapon_id': 'uzi'}, 4.0),
-    (20, {'type': 'weapon_unlock', 'weapon_id': 'shotgun'}, 5.0),
-    (40, {'type': 'ammo', 'weapon_id': 'rifle', 'amount': 18}, 2.5),
-    (40, {'type': 'ammo', 'weapon_id': 'uzi', 'amount': 32}, 2.5),
-    (30, {'type': 'ammo', 'weapon_id': 'shotgun', 'amount': 12}, 2.5),
+    (35, {'type': 'weapon_unlock', 'weapon_id': 'uzi'}, 4.0),
+    (20, {'type': 'weapon_unlock', 'weapon_id': 'rifle'}, 4.0),
+    (10, {'type': 'weapon_unlock', 'weapon_id': 'shotgun'}, 5.0),
+    (30, {'type': 'ammo', 'weapon_id': 'rifle', 'amount': 10}, 2.5),
+    (30, {'type': 'ammo', 'weapon_id': 'uzi', 'amount': 16}, 2.5),
+    (25, {'type': 'ammo', 'weapon_id': 'shotgun', 'amount': 6}, 2.5),
     (35, {'type': 'health', 'amount': 50}, 2.0),
     (20, {'type': 'score', 'amount': 200}, 3.0),
 ]
 
-# Car loot table (slightly better rewards)
+# Car loot table — no weapons, only ammo/health/score
 CAR_LOOT_TABLE = [
-    (25, {'type': 'weapon_unlock', 'weapon_id': 'rifle'}, 3.5),
-    (25, {'type': 'weapon_unlock', 'weapon_id': 'uzi'}, 3.5),
-    (20, {'type': 'weapon_unlock', 'weapon_id': 'shotgun'}, 4.0),
-    (40, {'type': 'ammo', 'weapon_id': 'rifle', 'amount': 24}, 2.5),
-    (40, {'type': 'ammo', 'weapon_id': 'uzi', 'amount': 40}, 2.5),
-    (30, {'type': 'ammo', 'weapon_id': 'shotgun', 'amount': 16}, 2.5),
-    (30, {'type': 'health', 'amount': 60}, 2.0),
-    (15, {'type': 'score', 'amount': 300}, 3.0),
+    (35, {'type': 'ammo', 'weapon_id': 'rifle', 'amount': 12}, 2.5),
+    (35, {'type': 'ammo', 'weapon_id': 'uzi', 'amount': 20}, 2.5),
+    (25, {'type': 'ammo', 'weapon_id': 'shotgun', 'amount': 8}, 2.5),
+    (35, {'type': 'health', 'amount': 60}, 2.0),
+    (20, {'type': 'score', 'amount': 300}, 3.0),
 ]
 
 
