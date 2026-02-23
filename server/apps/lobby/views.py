@@ -29,3 +29,17 @@ def room_detail(request, code):
         return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
     serializer = RoomSerializer(room)
     return Response(serializer.data)
+
+
+@api_view(['DELETE'])
+def room_delete(request, code):
+    try:
+        room = Room.objects.get(code=code)
+    except Room.DoesNotExist:
+        return Response({'error': 'Room not found'}, status=status.HTTP_404_NOT_FOUND)
+    room.delete()
+    # Also clean up in-memory game state if present
+    from apps.game.state import game_manager
+    if code in game_manager.rooms:
+        game_manager.remove_room(code)
+    return Response(status=status.HTTP_204_NO_CONTENT)

@@ -92,13 +92,22 @@ export class MainMenu {
       container.innerHTML = rooms.map(r => `
         <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; margin-bottom: 4px; background: #1a1a2e; border-radius: 6px;">
           <span>${r.name} <span style="color: #666;">(${r.player_count}/${r.max_players})</span></span>
-          <button data-code="${r.code}" style="padding: 6px 14px; border-radius: 6px; border: none; background: #44aa44; color: white; cursor: pointer; font-size: 13px;">Join</button>
+          <div style="display: flex; gap: 4px;">
+            <button data-code="${r.code}" style="padding: 6px 14px; border-radius: 6px; border: none; background: #44aa44; color: white; cursor: pointer; font-size: 13px;">Join</button>
+            <button data-delete="${r.code}" style="padding: 6px 8px; border-radius: 6px; border: none; background: #ff4444; color: white; cursor: pointer; font-size: 13px; font-weight: bold;">X</button>
+          </div>
         </div>
       `).join('');
       container.querySelectorAll('button[data-code]').forEach(btn => {
         btn.addEventListener('click', () => {
           const name = this.el.querySelector('#menu-name').value.trim() || 'Player';
           this.onJoinRoom(btn.dataset.code, name);
+        });
+      });
+      container.querySelectorAll('button[data-delete]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await api.delete(`/api/rooms/${btn.dataset.delete}/delete/`);
+          this._loadRooms();
         });
       });
     } catch (e) {

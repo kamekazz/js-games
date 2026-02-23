@@ -37,6 +37,18 @@ export class ApiClient {
     });
     return res;
   }
+
+  async delete(url) {
+    await this._ensureCsrf();
+    const res = await fetch(url, {
+      method: 'DELETE',
+      credentials: 'same-origin',
+      headers: {
+        'X-CSRFToken': this._getCsrfToken() || '',
+      },
+    });
+    return res;
+  }
 }
 
 // Singleton
