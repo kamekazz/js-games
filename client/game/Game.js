@@ -5,6 +5,7 @@ import { VirtualJoystick } from '@ui/VirtualJoystick.js';
 import { ActionButton } from '@ui/ActionButton.js';
 import { WeaponHotbar } from '@ui/WeaponHotbar.js';
 import { HUD } from '@ui/HUD.js';
+import { ZoomSlider } from '@ui/ZoomSlider.js';
 import { PauseMenu } from '@ui/PauseMenu.js';
 import { InputSystem } from './systems/InputSystem.js';
 import { AimSystem } from './systems/AimSystem.js';
@@ -80,6 +81,8 @@ export class Game {
     this._pauseMenu = new PauseMenu(() => {
       if (this.onLeave) this.onLeave();
     });
+
+    this._zoomSlider = new ZoomSlider(overlay, this.engine.renderer);
   }
 
   _registerSystems() {
@@ -263,6 +266,7 @@ export class Game {
     if (this.hud) { this.hud.destroy(); this.hud = null; }
     if (this._scoreboard) { this._scoreboard.destroy(); this._scoreboard = null; }
     if (this._pauseMenu) { this._pauseMenu.destroy(); this._pauseMenu = null; }
+    if (this._zoomSlider) { this._zoomSlider.destroy(); this._zoomSlider = null; }
 
     // Clean up render systems via their own destroy() methods
     this._projectileSystem.destroy();
