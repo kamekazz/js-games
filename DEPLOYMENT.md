@@ -24,7 +24,7 @@ POSTGRES_PASSWORD=choose-a-strong-password
 Then run:
 
 ```bash
-docker compose up -d --build
+docker compose up -d --buildW
 ```
 
 The app will be available on **port 80**.

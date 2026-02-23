@@ -53,7 +53,13 @@
       "Bash(export PATH=\"/c/Users/manuel/nodejs/node-v22.14.0-win-x64:$PATH\" && cd /c/Users/manuel/Desktop/js-games/client && npx playwright install chromium 2>&1)",
       "Bash(export PATH=\"/c/Users/manuel/nodejs/node-v22.14.0-win-x64:$PATH\" && cd /c/Users/manuel/Desktop/js-games/client && npx playwright test 2>&1)",
       "Bash(export PATH=\"/c/Users/manuel/nodejs/node-v22.14.0-win-x64:$PATH\" && cd /c/Users/manuel/Desktop/js-games/client && npx playwright test e2e/results.spec.js 2>&1)",
-      "Bash(where node:*)"
+      "Bash(where node:*)",
+      "Bash(test:*)",
+      "Bash(cd /c/Users/manuel/Desktop/js-games && docker-compose -f docker-compose.dev.yml up -d 2>&1)",
+      "Bash(docker compose:*)",
+      "Bash(cd /c/Users/manuel/Desktop/js-games/client && npx vite --host 0.0.0.0 2>&1)",
+      "Bash(where python 2>&1 || where python3 2>&1 || ls /c/Users/manuel/Desktop/js-games/server/.venv/Scripts/ 2>&1)",
+      "Bash(ls:*)"
     ]
   }
 }

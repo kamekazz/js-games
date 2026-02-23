@@ -4,6 +4,12 @@ export class ZoomSlider {
     this._minView = 15;
     this._maxView = 45;
 
+    // Smooth zoom interpolation
+    this._targetViewSize = renderer.viewSize;
+    this._smoothing = 0.08; // lerp factor per frame
+    this._animFrame = null;
+    this._animating = false;
+
     // Outer wrapper — positioned on the left side, vertically centered
     this.el = document.createElement('div');
     this.el.style.cssText = `
@@ -95,6 +101,17 @@ export class ZoomSlider {
       this._setViewSize(viewSize);
     });
 
+    // Mouse scroll wheel zoom (smooth)
+    this._onWheel = (e) => {
+      if (e.deltaY === 0) return;
+      e.preventDefault();
+      // Scroll up = zoom in (smaller viewSize), scroll down = zoom out
+      const delta = e.deltaY > 0 ? 3 : -3;
+      this._targetViewSize = Math.max(this._minView, Math.min(this._maxView, this._targetViewSize + delta));
+      this._startSmooth();
+    };
+    window.addEventListener('wheel', this._onWheel, { passive: false });
+
     container.appendChild(this.el);
     this._updateThumb();
   }
@@ -129,6 +146,7 @@ export class ZoomSlider {
 
   _step(delta) {
     const viewSize = Math.max(this._minView, Math.min(this._maxView, this._renderer.viewSize + delta));
+    this._targetViewSize = viewSize;
     this._setViewSize(viewSize);
   }
 
@@ -138,6 +156,23 @@ export class ZoomSlider {
     this._updateThumb();
   }
 
+  _startSmooth() {
+    if (this._animating) return;
+    this._animating = true;
+    const tick = () => {
+      const current = this._renderer.viewSize;
+      const diff = this._targetViewSize - current;
+      if (Math.abs(diff) < 0.05) {
+        this._setViewSize(this._targetViewSize);
+        this._animating = false;
+        return;
+      }
+      this._setViewSize(current + diff * this._smoothing);
+      this._animFrame = requestAnimationFrame(tick);
+    };
+    this._animFrame = requestAnimationFrame(tick);
+  }
+
   _updateThumb() {
     const t = (this._renderer.viewSize - this._minView) / (this._maxView - this._minView);
     const trackHeight = 120;
@@ -145,6 +180,8 @@ export class ZoomSlider {
   }
 
   destroy() {
+    window.removeEventListener('wheel', this._onWheel);
+    if (this._animFrame) cancelAnimationFrame(this._animFrame);
     this.el.remove();
   }
 }
