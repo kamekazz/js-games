@@ -429,11 +429,14 @@ export class NetworkSyncSystem extends System {
       else this.hud.hideActionHint();
     }
 
-    // Fire callback only on state change
-    if (available !== this._prevActionAvailable) {
-      this._prevActionAvailable = available;
+    // For mobile button: keep visible while actively holding to prevent
+    // pointer capture loss from transient position flickering
+    const buttonAvailable = available || this.interactionSystem._held;
+
+    if (buttonAvailable !== this._prevActionAvailable) {
+      this._prevActionAvailable = buttonAvailable;
       if (this.onInteractionAvailableChanged) {
-        this.onInteractionAvailableChanged(available, label);
+        this.onInteractionAvailableChanged(buttonAvailable, label);
       }
     }
   }
