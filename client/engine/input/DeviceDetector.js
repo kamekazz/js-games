@@ -1,5 +1,6 @@
 export function isTouchDevice() {
-  return 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+  const hasFinePointer = window.matchMedia?.('(pointer: fine)').matches ?? true;
+  return !hasFinePointer;
 }
 
 export function isMobile() {

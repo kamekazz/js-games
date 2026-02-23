@@ -408,7 +408,7 @@ class PlayerState:
         'sprinting', '_last_shot_time',
         'stamina', '_stamina_regen_timer',
         'unlocked_weapons', 'weapon_ammo_reserve',
-        'action_holding', 'action_progress', 'action_target_id', 'action_target_type', 'action_duration',
+        'action_holding', 'action_progress', 'action_target_id', 'action_target_type', 'action_duration', '_action_last_confirmed',
         'extracted',
         'user_id', '_leaderboard_saved',
     )
@@ -454,6 +454,7 @@ class PlayerState:
         self.action_target_id = None
         self.action_target_type = None
         self.action_duration = 0.0
+        self._action_last_confirmed = 0.0
         # Extraction
         self.extracted = False
         # Identity / leaderboard
@@ -684,6 +685,8 @@ class GameRoom:
         if not player or not player.alive:
             return
         player.action_holding = bool(holding)
+        if player.action_holding:
+            player._action_last_confirmed = time.time()
 
     def _rebuild_static_state(self):
         """Cache serialization of static/rarely-changing data."""
@@ -1034,9 +1037,14 @@ class GameRoom:
 
     def _update_actions(self, dt):
         """Update hold-to-interact actions for all players."""
+        now = time.time()
         for player in self.players.values():
             if not player.alive or player.extracted:
                 continue
+
+            # Safety timeout: reset action if no re-confirmation in 1.5s
+            if player.action_holding and now - player._action_last_confirmed > 1.5:
+                player.action_holding = False
 
             if not player.action_holding:
                 # Reset action progress

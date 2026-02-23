@@ -112,8 +112,8 @@ export class NetworkSyncSystem extends System {
       sprint: sprinting,
     };
     // Piggyback action holding state so server always has latest
-    if (this.interactionSystem && this.interactionSystem._held) {
-      msg.holding = true;
+    if (this.interactionSystem) {
+      msg.holding = this.interactionSystem._held;
     }
     this.networkClient.send(msg);
   }
