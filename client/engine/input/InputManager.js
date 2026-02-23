@@ -1,6 +1,7 @@
 export class InputManager {
   constructor(renderer) {
     this.renderer = renderer; // needed for mouse→world conversion
+    this._isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     this.state = {
       moveX: 0,
       moveY: 0,
@@ -25,7 +26,11 @@ export class InputManager {
     this._prevMouseButtonDown = false;
 
     this._bindKeyboard();
-    this._bindMouse();
+    // Skip mouse binding on touch devices to prevent touch-to-mouse
+    // emulation from interfering with joystick input
+    if (!this._isTouch) {
+      this._bindMouse();
+    }
   }
 
   _bindKeyboard() {
