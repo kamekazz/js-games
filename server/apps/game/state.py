@@ -1028,9 +1028,7 @@ class GameRoom:
             if not player.alive or player.extracted:
                 continue
 
-            is_moving = abs(player.vx) > 0.05 or abs(player.vy) > 0.05
-
-            if not player.action_holding or is_moving:
+            if not player.action_holding:
                 # Reset action progress
                 if player.action_progress > 0:
                     player.action_progress = 0.0
@@ -1042,6 +1040,9 @@ class GameRoom:
             # Find nearest interactable
             result = self._find_nearest_interactable(player)
             if not result:
+                # Keep extraction progress if player briefly leaves zone
+                if player.action_target_type == 'extraction_zone':
+                    continue
                 player.action_progress = 0.0
                 player.action_target_id = None
                 player.action_target_type = None
@@ -1050,7 +1051,7 @@ class GameRoom:
 
             target_type, target_id, duration = result
 
-            # If target changed, reset progress
+            # If target changed, reset progress (but not if returning to same extraction zone)
             if player.action_target_id != target_id or player.action_target_type != target_type:
                 player.action_progress = 0.0
                 player.action_target_id = target_id
